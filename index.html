@@ -83,6 +83,7 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
 .tool-row { display: flex; gap: 0.3rem; }
 .tool-row button { flex: 1; text-align: center; }
 .tool-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
+.tool-row button:disabled { opacity: 0.3; cursor: default; }
 .sketch-toggle {
   position: absolute; top: 0.7rem; right: 0.7rem; z-index: 2;
   background: var(--panel); border: 1px solid var(--border); color: var(--muted);

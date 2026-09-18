@@ -740,6 +740,8 @@ function buildPanel() {
     toolRow.className = 'tool-row';
     const brushBtn = makeToolButton('кисть', !brushErase, () => { brushErase = false; buildPanel(); });
     const eraseBtn = makeToolButton('ластик', brushErase, () => { brushErase = true; buildPanel(); });
+    brushBtn.disabled = !brushErase ? false : true;
+    eraseBtn.disabled = brushErase ? false : true;
     toolRow.append(brushBtn, eraseBtn);
     panelTarget.append(toolRow);
     hr();
