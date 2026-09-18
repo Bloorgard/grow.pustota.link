@@ -708,11 +708,11 @@ function buildPanel() {
   }
   if (mode === 'walls') {
     makeRange('brush', 'кисть', 2, 20, 1);
-    const erase = document.createElement('button');
-    erase.type = 'button';
-    const paintErase = () => { erase.textContent = brushErase ? 'ластик · вкл' : 'ластик · выкл'; };
-    erase.addEventListener('click', () => { brushErase = !brushErase; paintErase(); });
-    paintErase(); panel.append(erase);
+    const tool = document.createElement('button');
+    tool.type = 'button';
+    const paintTool = () => { tool.textContent = brushErase ? 'ластик' : 'кисть'; };
+    tool.addEventListener('click', () => { brushErase = !brushErase; paintTool(); });
+    paintTool(); panel.append(tool);
     hr();
     makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
     hr();
@@ -722,11 +722,6 @@ function buildPanel() {
     svgLabel.type = 'button'; svgLabel.textContent = 'загрузить SVG';
     svgLabel.addEventListener('click', () => document.getElementById('svg-file').click());
     panel.append(svgLabel);
-    hr();
-    makeButton('сохранить PNG', exportPNG);
-    makeButton('сохранить SVG', exportSVG);
-    hr();
-    makeButton('пауза (пробел)', togglePause);
   } else {
     makeToggle('auto', 'автономно');
     makeToggle('showWalls', 'перегородки');
@@ -737,7 +732,6 @@ function buildPanel() {
     makeRange('seeds', 'очагов', 1, 14, 1);
     makeRange('crowd', 'поголовье', 0, 30, 1);
     makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
-    makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
     hr();
     makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
     makeRange('step', 'звено', 0.003, 0.03, 0.001);
