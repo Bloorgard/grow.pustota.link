@@ -675,18 +675,26 @@ function makeToggle(key, label) {
 }
 
 function makePick(key, label, options) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
+  const wrap = document.createElement('div');
+  wrap.className = 'pick-row';
+  wrap.dataset.label = label;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'pick-label';
+  labelEl.textContent = label;
+  wrap.append(labelEl);
   const getIdx = () => typeof values[key] === 'number' ? values[key] : options.indexOf(values[key]);
-  const paint = () => { btn.textContent = `${label} · ${options[getIdx()]}`; };
-  btn.addEventListener('click', () => {
-    const idx = getIdx();
-    const next = (idx + 1) % options.length;
-    values[key] = typeof values[key] === 'number' ? next : options[next];
-    paint();
-    if (key === 'format') resize();
+  options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = opt;
+    btn.className = i === getIdx() ? 'pick-active' : '';
+    btn.addEventListener('click', () => {
+      values[key] = typeof values[key] === 'number' ? i : opt;
+      wrap.querySelectorAll('button').forEach((b, j) => b.className = j === i ? 'pick-active' : '');
+      if (key === 'format') resize();
+    });
+    wrap.append(btn);
   });
-  paint(); panelTarget.append(btn);
+  panelTarget.append(wrap);
 }
 
 function makeButton(text, action) {

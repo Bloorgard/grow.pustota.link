@@ -84,6 +84,10 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
 .tool-row button { flex: 1; text-align: center; }
 .tool-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
 .tool-row button:not(.tool-active) { opacity: 0.4; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.pick-label { font-size: 0.7rem; color: var(--muted); width: 100%; margin-bottom: 0.1rem; }
+.pick-row button { flex: 1; text-align: center; min-width: 0; }
+.pick-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
 .sketch-toggle {
   position: absolute; top: 0.7rem; right: 0.7rem; z-index: 2;
   background: var(--panel); border: 1px solid var(--border); color: var(--muted);
