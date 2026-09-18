@@ -24,14 +24,14 @@
 html, body { height: 100%; background: var(--bg); color: var(--fg); font-family: 'PT Mono', monospace; overflow: hidden; }
 body { display: flex; flex-direction: column; touch-action: none; }
 header {
-  display: flex; align-items: center; justify-content: center; gap: 0.8rem; padding: 0.5rem 0.9rem;
+  display: flex; align-items: center; gap: 0.8rem; padding: 0.5rem 0.9rem;
   border-bottom: 1px solid var(--border); flex-shrink: 0;
-  flex-wrap: wrap; min-height: 0;
+  flex-wrap: wrap; min-height: 0; position: relative;
 }
 header .identity { font-weight: 500; font-size: 0.85rem; white-space: nowrap; }
 header .identity a { color: var(--muted); text-decoration: none; }
 header .identity a:hover { color: var(--fg); }
-header .modes { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+header .modes { display: flex; gap: 0.3rem; flex-wrap: wrap; position: absolute; left: 50%; transform: translateX(-50%); }
 header .tools { display: none; }
 header .modes button {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
