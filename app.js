@@ -384,9 +384,20 @@ function growStep() {
 /* ===== рисование ===== */
 
 function drawCanvasFrame() {
-  ctx.strokeStyle = FAINT;
-  ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.003);
+  ctx.strokeStyle = 'rgba(241,237,229,0.18)';
+  ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.004);
   ctx.strokeRect(0, 0, Sx, Sy);
+}
+
+function drawOnboarding() {
+  if (mode !== 'walls' || hasWalls() || svgPlacing) return;
+  const Smin = Math.min(Sx, Sy);
+  ctx.fillStyle = 'rgba(241,237,229,0.2)';
+  ctx.font = `500 ${Math.round(Smin * 0.04)}px 'PT Sans', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('рисуйте здесь', Sx / 2, Sy / 2);
+  ctx.textAlign = 'left';
 }
 
 function drawSVGOverlay() {
@@ -419,6 +430,7 @@ function wallDraw() {
   }
   if (svgOverlay) drawSVGOverlay();
   drawCanvasFrame();
+  drawOnboarding();
   if (pointer.x >= 0 && pointer.x <= 1 && pointer.y >= 0 && pointer.y <= 1 && !svgPlacing) {
     const r = brushSize / GRID;
     const Smin = Math.min(Sx, Sy);
@@ -725,6 +737,7 @@ function buildPanel() {
     makeRange('seeds', 'очагов', 1, 14, 1);
     makeRange('crowd', 'поголовье', 0, 30, 1);
     makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
+    makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
     hr();
     makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
     makeRange('step', 'звено', 0.003, 0.03, 0.001);
@@ -755,7 +768,10 @@ function setMode(newMode) {
   for (const btn of document.querySelectorAll('#modes button')) {
     btn.classList.toggle('active', btn.dataset.mode === newMode);
   }
-  if (newMode === 'grow') startGrowth();
+  if (newMode === 'grow') {
+    values.showWalls = true;
+    startGrowth();
+  }
   pointer.down = false; pointer.id = null;
   wallDrawing = false; lastWall = null;
   buildPanel();
