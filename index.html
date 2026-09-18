@@ -41,13 +41,6 @@ header .modes button {
 }
 header .modes button:hover { color: var(--fg); border-color: rgba(241,237,229,.3); }
 header .modes button.active { color: var(--fg); border-color: var(--fg); background: var(--panel); }
-header .tools { display: flex; gap: 0.3rem; margin-left: auto; flex-wrap: wrap; }
-header .tools button {
-  background: transparent; border: 1px solid var(--border); color: var(--muted);
-  font-family: inherit; font-size: 0.72rem; padding: 0.28rem 0.6rem;
-  border-radius: 0.3rem; cursor: pointer; white-space: nowrap;
-}
-header .tools button:hover { color: var(--fg); }
 main { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; min-height: 0; overflow: hidden; }
 #canvas { display: block; cursor: crosshair; touch-action: none; }
 .workspace-hint {
@@ -83,12 +76,12 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
 .section-body { display: flex; flex-direction: column; gap: 0.4rem; }
 .tool-row { display: flex; gap: 0.3rem; }
 .tool-row button { flex: 1; text-align: center; }
-.tool-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
-.tool-row button:not(.tool-active) { opacity: 0.4; }
+.btn-active { border-color: var(--fg) !important; color: var(--fg) !important; background: var(--panel); }
+.tool-row button:not(.btn-active) { opacity: 0.4; }
 .pick-row { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 .pick-label { font-size: 0.7rem; color: var(--muted); width: 100%; margin-bottom: 0.1rem; }
 .pick-row button { flex: 1; text-align: center; min-width: 0; }
-.pick-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
+.pick-row button:not(.btn-active) { opacity: 0.4; }
 .sketch-toggle {
   position: absolute; top: 0.7rem; right: 0.7rem; z-index: 2;
   background: var(--panel); border: 1px solid var(--border); color: var(--muted);

@@ -686,10 +686,10 @@ function makePick(key, label, options) {
   options.forEach((opt, i) => {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.textContent = opt;
-    btn.className = i === getIdx() ? 'pick-active' : '';
+    btn.className = i === getIdx() ? 'btn-active' : '';
     btn.addEventListener('click', () => {
       values[key] = typeof values[key] === 'number' ? i : opt;
-      wrap.querySelectorAll('button').forEach((b, j) => b.className = j === i ? 'pick-active' : '');
+      wrap.querySelectorAll('button').forEach((b, j) => b.className = j === i ? 'btn-active' : '');
       if (key === 'format') resize();
     });
     wrap.append(btn);
@@ -707,7 +707,7 @@ function makeButton(text, action) {
 function makeToolButton(label, active, action) {
   const btn = document.createElement('button');
   btn.type = 'button'; btn.textContent = label;
-  btn.className = active ? 'tool-active' : '';
+  if (active) btn.className = 'btn-active';
   btn.addEventListener('click', action);
   return btn;
 }
