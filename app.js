@@ -746,9 +746,9 @@ function buildPanel() {
     panelTarget.append(toolRow);
     hr();
     makeButton('отменить ⌘Z', undoWalls);
+    makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; });
     hr();
     makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
-    makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; });
     const svgLabel = document.createElement('button');
     svgLabel.type = 'button'; svgLabel.textContent = 'загрузить SVG';
     svgLabel.addEventListener('click', () => document.getElementById('svg-file').click());
