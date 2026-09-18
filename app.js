@@ -697,6 +697,13 @@ function makeButton(text, action) {
 
 function hr() { const h = document.createElement('hr'); panel.append(h); }
 
+function makeSection(title) {
+  const h = document.createElement('div');
+  h.className = 'section-title';
+  h.textContent = title;
+  panel.append(h);
+}
+
 function buildPanel() {
   panel.innerHTML = '';
   if (svgPlacing) {
@@ -726,6 +733,7 @@ function buildPanel() {
     makeToggle('auto', 'автономно');
     makeToggle('showWalls', 'перегородки');
     hr();
+    makeSection('рост');
     makeRange('speed', 'скорость', 1, 16, 1);
     makeRange('mass', 'масса', 1, 8, 1);
     makeRange('branch', 'ветвление', 0, 8, 1);
@@ -733,6 +741,7 @@ function buildPanel() {
     makeRange('crowd', 'поголовье', 0, 30, 1);
     makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
     hr();
+    makeSection('форма');
     makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
     makeRange('step', 'звено', 0.003, 0.03, 0.001);
     makeRange('wander', 'извив', 0.2, 2.5, 0.1);
@@ -740,13 +749,14 @@ function buildPanel() {
     makeRange('pull', 'тяга к еде', 0, 2, 0.05);
     makeRange('life', 'жизнь', 0.5, 6, 0.5);
     hr();
+    makeSection('управление');
     makeButton('заново (r)', () => { values.auto = true; startGrowth(); });
     makeButton('вручную (c)', () => { values.auto = false; startGrowth(); });
-    hr();
-    makeButton('сохранить PNG', exportPNG);
-    makeButton('сохранить SVG', exportSVG);
-    hr();
     makeButton('пауза (пробел)', togglePause);
+    hr();
+    makeSection('сохранить');
+    makeButton('PNG', exportPNG);
+    makeButton('SVG', exportSVG);
   }
 }
 
