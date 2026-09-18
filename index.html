@@ -58,7 +58,7 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
   position: absolute; top: 0.7rem; right: 0.7rem; z-index: 3;
   background: var(--panel); border: 1px solid var(--border); border-radius: 0.5rem;
   padding: 0.6rem; display: flex; flex-direction: column; gap: 0.4rem;
-  min-width: 200px; max-height: 80vh; overflow-y: auto; backdrop-filter: blur(8px);
+  min-width: 200px; max-height: 85vh; overflow-y: auto; backdrop-filter: blur(8px);
 }
 .sketch-panel label { display: flex; flex-direction: column; gap: 0.2rem; }
 .sketch-panel label span { font-size: 0.7rem; color: var(--muted); }
@@ -70,7 +70,19 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
 }
 .sketch-panel button:hover, .sketch-action:hover { background: var(--panel); }
 .sketch-panel hr { border: none; border-top: 1px solid var(--border); margin: 0.2rem 0; }
-.section-title { font-size: 0.62rem; color: rgba(241,237,229,0.3); text-transform: uppercase; letter-spacing: 0.08em; margin: 0.25rem 0 0.15rem; }
+.section { margin-bottom: 0.1rem; }
+.section-head {
+  font-size: 0.62rem; color: rgba(241,237,229,0.4); text-transform: uppercase; letter-spacing: 0.08em;
+  cursor: pointer; padding: 0.3rem 0; user-select: none;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.section-head::after { content: '▾'; font-size: 0.6rem; opacity: 0.5; }
+.section.collapsed .section-head::after { content: '▸'; }
+.section.collapsed .section-body { display: none; }
+.section-body { display: flex; flex-direction: column; gap: 0.4rem; }
+.tool-row { display: flex; gap: 0.3rem; }
+.tool-row button { flex: 1; text-align: center; }
+.tool-active { border-color: var(--fg); color: var(--fg); background: var(--panel); }
 .sketch-toggle {
   position: absolute; top: 0.7rem; right: 0.7rem; z-index: 2;
   background: var(--panel); border: 1px solid var(--border); color: var(--muted);

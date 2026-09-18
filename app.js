@@ -632,7 +632,7 @@ function key(event) {
   if (event.code === 'Space' && !(node && node.closest && node.closest('button'))) {
     event.preventDefault(); togglePause();
   }
-  if (event.code === 'KeyZ' && mode === 'walls') { event.preventDefault(); undoWalls(); }
+  if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey) && mode === 'walls') { event.preventDefault(); undoWalls(); }
   if (event.code === 'KeyR' && mode === 'grow') startGrowth();
   if (event.code === 'KeyC' && mode === 'grow') { values.auto = false; startGrowth(); }
 }
@@ -642,6 +642,7 @@ function key(event) {
 const panel = document.getElementById('panel');
 const toggleBtn = document.getElementById('toggle');
 const hintEl = document.getElementById('hint');
+let panelTarget = panel;
 
 function togglePanel() {
   panel.hidden = !panel.hidden;
@@ -662,7 +663,7 @@ function makeRange(key, label, min, max, step) {
     paint();
     if (key === 'gap') startGrowth();
   });
-  paint(); el.append(caption, input); panel.append(el);
+  paint(); el.append(caption, input); panelTarget.append(el);
 }
 
 function makeToggle(key, label) {
@@ -670,7 +671,7 @@ function makeToggle(key, label) {
   btn.type = 'button';
   const paint = () => { btn.textContent = `${label} · ${values[key] ? 'да' : 'нет'}`; };
   btn.addEventListener('click', () => { values[key] = !values[key]; paint(); });
-  paint(); panel.append(btn);
+  paint(); panelTarget.append(btn);
 }
 
 function makePick(key, label, options) {
@@ -685,54 +686,74 @@ function makePick(key, label, options) {
     paint();
     if (key === 'format') resize();
   });
-  paint(); panel.append(btn);
+  paint(); panelTarget.append(btn);
 }
 
 function makeButton(text, action) {
   const btn = document.createElement('button');
   btn.type = 'button'; btn.textContent = text;
   btn.addEventListener('click', action);
-  panel.append(btn);
+  panelTarget.append(btn);
+}
+
+function makeToolButton(label, active, action) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = label;
+  btn.className = active ? 'tool-active' : '';
+  btn.addEventListener('click', action);
+  return btn;
 }
 
 function hr() { const h = document.createElement('hr'); panel.append(h); }
 
-function makeSection(title) {
-  const h = document.createElement('div');
-  h.className = 'section-title';
-  h.textContent = title;
-  panel.append(h);
+function makeSection(title, collapsed = false) {
+  const wrap = document.createElement('div');
+  wrap.className = 'section' + (collapsed ? ' collapsed' : '');
+  const head = document.createElement('div');
+  head.className = 'section-head';
+  head.textContent = title;
+  const body = document.createElement('div');
+  body.className = 'section-body';
+  head.addEventListener('click', () => {
+    wrap.classList.toggle('collapsed');
+  });
+  wrap.append(head, body);
+  panel.append(wrap);
+  panelTarget = body;
+  return body;
 }
+
+function endSection() { panelTarget = panel; }
 
 function buildPanel() {
   panel.innerHTML = '';
+  panelTarget = panel;
   if (svgPlacing) {
     makeButton('применить SVG', applySVG);
     makeButton('отменить SVG', cancelSVG);
-    hr();
-    makeButton('пауза (пробел)', togglePause);
     return;
   }
   if (mode === 'walls') {
+    /* кисть / ластик — две кнопки в ряд */
     makeRange('brush', 'кисть', 2, 20, 1);
-    const tool = document.createElement('button');
-    tool.type = 'button';
-    const paintTool = () => { tool.textContent = brushErase ? 'ластик' : 'кисть'; };
-    tool.addEventListener('click', () => { brushErase = !brushErase; paintTool(); });
-    paintTool(); panel.append(tool);
+    const toolRow = document.createElement('div');
+    toolRow.className = 'tool-row';
+    const brushBtn = makeToolButton('кисть', !brushErase, () => { brushErase = false; buildPanel(); });
+    const eraseBtn = makeToolButton('ластик', brushErase, () => { brushErase = true; buildPanel(); });
+    toolRow.append(brushBtn, eraseBtn);
+    panelTarget.append(toolRow);
+    hr();
+    makeButton('отменить ⌘Z', undoWalls);
     hr();
     makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
-    hr();
-    makeButton('отменить (z)', undoWalls);
     makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; });
     const svgLabel = document.createElement('button');
     svgLabel.type = 'button'; svgLabel.textContent = 'загрузить SVG';
     svgLabel.addEventListener('click', () => document.getElementById('svg-file').click());
-    panel.append(svgLabel);
+    panelTarget.append(svgLabel);
   } else {
     makeToggle('auto', 'автономно');
     makeToggle('showWalls', 'перегородки');
-    hr();
     makeSection('рост');
     makeRange('speed', 'скорость', 1, 16, 1);
     makeRange('mass', 'масса', 1, 8, 1);
@@ -740,23 +761,24 @@ function buildPanel() {
     makeRange('seeds', 'очагов', 1, 14, 1);
     makeRange('crowd', 'поголовье', 0, 30, 1);
     makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
-    hr();
-    makeSection('форма');
+    endSection();
+    makeSection('форма', true);
     makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
     makeRange('step', 'звено', 0.003, 0.03, 0.001);
     makeRange('wander', 'извив', 0.2, 2.5, 0.1);
     makeRange('straight', 'прямизна', 0, 1, 0.02);
     makeRange('pull', 'тяга к еде', 0, 2, 0.05);
     makeRange('life', 'жизнь', 0.5, 6, 0.5);
-    hr();
+    endSection();
     makeSection('управление');
     makeButton('заново (r)', () => { values.auto = true; startGrowth(); });
     makeButton('вручную (c)', () => { values.auto = false; startGrowth(); });
     makeButton('пауза (пробел)', togglePause);
-    hr();
+    endSection();
     makeSection('сохранить');
     makeButton('PNG', exportPNG);
     makeButton('SVG', exportSVG);
+    endSection();
   }
 }
 
