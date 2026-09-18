@@ -121,6 +121,10 @@ function renderWallCanvas() {
 function loadSVG(file) {
   const reader = new FileReader();
   reader.onload = () => {
+    let svgText = reader.result;
+    /* SVG из редакторов часто использует CSS-классы для fill/stroke, которые
+       не применяются при rasterization через Image. Добавляем явный fill. */
+    svgText = svgText.replace(/<(path|rect|circle|ellipse|polygon|polyline|line)\b/gi, '<$1 fill="black"');
     const img = new Image();
     img.onload = () => {
       const iw = img.naturalWidth || 300;
@@ -140,10 +144,11 @@ function loadSVG(file) {
       window.svgPlacing = svgPlacing;
       updateHint();
       updateGrowButton();
+      if (!panel.hidden) buildPanel();
     };
-    img.src = reader.result;
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
   };
-  reader.readAsDataURL(file);
+  reader.readAsText(file);
 }
 
 /* Применить SVG-оверлей: растеризовать в walls. */
@@ -650,6 +655,7 @@ const hintEl = document.getElementById('hint');
 let panelTarget = panel;
 
 function togglePanel() {
+  if (panel.hidden) buildPanel();
   panel.hidden = !panel.hidden;
   toggleBtn.hidden = !panel.hidden;
 }
