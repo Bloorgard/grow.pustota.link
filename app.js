@@ -78,6 +78,7 @@ function undoWalls() {
   if (!wallHistory.length) return;
   walls = wallHistory.pop();
   wallDirty = true;
+  updateGrowButton();
 }
 
 function paintWall(x, y) {
@@ -138,6 +139,7 @@ function loadSVG(file) {
       window.svgOverlay = svgOverlay;
       window.svgPlacing = svgPlacing;
       updateHint();
+      updateGrowButton();
     };
     img.src = reader.result;
   };
@@ -165,6 +167,7 @@ function applySVG() {
   window.svgOverlay = null;
   window.svgPlacing = false;
   updateHint();
+  updateGrowButton();
 }
 
 function cancelSVG() {
@@ -173,6 +176,7 @@ function cancelSVG() {
   window.svgOverlay = null;
   window.svgPlacing = false;
   updateHint();
+  updateGrowButton();
 }
 
 function hasWalls() {
@@ -573,6 +577,7 @@ function down(event) {
     wallDrawing = true;
     lastWall = { x: pointer.x, y: pointer.y };
     paintWall(pointer.x, pointer.y);
+    updateGrowButton();
   } else {
     growth.leading = true;
     feed(pointer.x, pointer.y);
@@ -752,7 +757,7 @@ function buildPanel() {
     panelTarget.append(toolRow);
     hr();
     makeButton('отменить ⌘Z', undoWalls);
-    makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; });
+    makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; updateGrowButton(); });
     hr();
     makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
     const svgLabel = document.createElement('button');
@@ -826,8 +831,18 @@ function updateHint() {
   else hintEl.textContent = 'коснитесь — питание, рост идёт следом';
 }
 
+function updateGrowButton() {
+  const growBtn = document.querySelector('#modes button[data-mode="grow"]');
+  if (!growBtn) return;
+  if (hasWalls() || svgPlacing) growBtn.classList.remove('btn-disabled');
+  else growBtn.classList.add('btn-disabled');
+}
+
 document.querySelectorAll('#modes button').forEach(btn => {
-  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('btn-disabled')) return;
+    setMode(btn.dataset.mode);
+  });
 });
 
 document.getElementById('svg-file').addEventListener('change', (e) => {
@@ -895,6 +910,7 @@ observer.observe(canvas.parentElement);
 resize();
 buildPanel();
 updateHint();
+updateGrowButton();
 
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);

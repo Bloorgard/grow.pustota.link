@@ -77,6 +77,7 @@ main { flex: 1; position: relative; display: flex; justify-content: center; alig
 .tool-row { display: flex; gap: 0.3rem; }
 .tool-row button { flex: 1; text-align: center; }
 .btn-active { border-color: var(--fg) !important; color: var(--fg) !important; background: var(--panel); }
+.btn-disabled { opacity: 0.25; cursor: default; pointer-events: none; }
 .tool-row button:not(.btn-active) { opacity: 0.4; }
 .pick-row { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 .pick-label { font-size: 0.7rem; color: var(--muted); width: 100%; margin-bottom: 0.1rem; }
