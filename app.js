@@ -776,8 +776,16 @@ function buildPanel() {
     makeButton('пауза (пробел)', togglePause);
     endSection();
     makeSection('сохранить');
-    makeButton('PNG', exportPNG);
-    makeButton('SVG', exportSVG);
+    const saveRow = document.createElement('div');
+    saveRow.className = 'tool-row';
+    const pngBtn = document.createElement('button');
+    pngBtn.type = 'button'; pngBtn.textContent = 'PNG';
+    pngBtn.addEventListener('click', exportPNG);
+    const svgBtn = document.createElement('button');
+    svgBtn.type = 'button'; svgBtn.textContent = 'SVG';
+    svgBtn.addEventListener('click', exportSVG);
+    saveRow.append(pngBtn, svgBtn);
+    panelTarget.append(saveRow);
     endSection();
   }
 }
