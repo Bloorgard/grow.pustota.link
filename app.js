@@ -32,6 +32,9 @@ let last = performance.now(), debt = 0;
 let paused = false;
 let mode = 'walls';
 let hasInteracted = false;
+/* Стены правили с прошлого входа в рост — значит узор относится к другому
+   рисунку, и при возврате в рост он начинается заново. */
+let wallsChanged = false;
 
 /* ===== параметры ===== */
 
@@ -251,7 +254,7 @@ function undoWalls() {
   if (!undoStack.length) return;
   const top = undoStack.pop();
   if (top.xform) composeDrawing(top.xform);
-  else wallOps = top;
+  else { wallOps = top; wallsChanged = true; }
   updateControls();
   gridDirty = true;
   rebuildWallCanvas();
@@ -262,6 +265,7 @@ function undoWalls() {
 function clearWalls() {
   pushUndo();
   wallOps = [];
+  wallsChanged = true;
   gridDirty = true;
   rebuildWallCanvas();
   updateGrowButton();
@@ -334,6 +338,7 @@ function applySVG() {
   const o = svgOverlay;
   pushUndo();
   wallOps.push({ k: 'svg', src: o.src, img: o.img, x: o.x, y: o.y, w: overlayWidth(o), h: o.h });
+  wallsChanged = true;
   svgOverlay = null;
   gridDirty = true;
   rebuildWallCanvas();
@@ -876,7 +881,7 @@ function release(event) {
   }
   if (mode === 'walls') {
     wallDrawing = false;
-    if (current) { current = null; updateGrowButton(); saveSoon(); }
+    if (current) { current = null; wallsChanged = true; updateGrowButton(); saveSoon(); }
   } else if (growth) { growth.trail = null; growth.leading = false; }
   if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
 }
@@ -1193,7 +1198,12 @@ function setMode(newMode) {
     values.showWalls = false;
     values.auto = true;
     startGrowth();
+  } else if (newMode === 'grow' && wallsChanged) {
+    /* Узор вырос вокруг прежних стен — на новых он начинается заново.
+       Прежний уходит в previousGrowth, откуда его возвращает ⌘Z. */
+    restartGrowth();
   }
+  if (newMode === 'grow') wallsChanged = false;
   debt = 0;
   updateControls(true);
   updateHint();

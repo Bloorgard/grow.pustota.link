@@ -1,6 +1,6 @@
 /* Сборка интерфейса. Модуль ничего не знает о состоянии приложения:
    всё приходит объектами state и actions. Импортирует только field.js. */
-import { shape, proportion, ratioLabel } from './field.js';
+import { shape, proportion, ratioLabel, aspect } from './field.js';
 
 export function icon(name) {
   return `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -205,6 +205,18 @@ const GROUPS = {
   ],
 };
 
+/* Иконки формы живут в той же пропорции, что и холст: ползунок тянут,
+   квадратик вместе с ним вытягивается. Бокс кнопки при этом не меняется. */
+function sizeShapeIcons(root) {
+  const ar = aspect();
+  const w = ar >= 1 ? 18 : 18 * ar;
+  const h = ar >= 1 ? 18 / ar : 18;
+  for (const i of root.querySelectorAll('.fmt i')) {
+    i.style.width = `${w.toFixed(1)}px`;
+    i.style.height = `${h.toFixed(1)}px`;
+  }
+}
+
 export function buildSettings(root, mode, values, a, svg) {
   root.innerHTML = '';
 
@@ -237,6 +249,7 @@ export function buildSettings(root, mode, values, a, svg) {
          </div>`);
     root.querySelectorAll('[data-shape]').forEach(b =>
       b.addEventListener('click', () => a.setShape(b.dataset.shape)));
+    sizeShapeIcons(root);
     const p = document.createElement('label');
     p.className = 'field';
     p.innerHTML = `<span>пропорция · ${ratioLabel()}</span>`
@@ -245,6 +258,7 @@ export function buildSettings(root, mode, values, a, svg) {
     pInput.addEventListener('input', e => {
       a.setProportion(Number(e.target.value));
       pCap.textContent = `пропорция · ${ratioLabel()}`;
+      sizeShapeIcons(root);
     });
     root.append(p);
 

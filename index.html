@@ -58,11 +58,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
   white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
 .settings .seg button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .settings .fmt { display: flex; gap: 5px; margin-bottom: 10px; }
-.settings .fmt button { width: 38px; height: 32px; border: 1px solid var(--border); border-radius: 5px;
+.settings .fmt button { width: 44px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 5px;
   background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: border-color .12s, background .12s; }
 .settings .fmt button.on { border-color: var(--fg); background: #ffffff14; }
-.settings .fmt i { display: block; width: 17px; height: 17px; border: 1.5px solid var(--fg); }
+/* Размеры задаёт ui.js: иконка повторяет пропорцию холста. */
+.settings .fmt i { display: block; flex: none; width: 18px; height: 18px; border: 1.5px solid var(--fg); }
 .settings .fmt i.rect { border-radius: 1px; }
 .settings .fmt i.oval { border-radius: 50%; }
 .settings .presets { display: flex; flex-wrap: wrap; gap: 4px; }
