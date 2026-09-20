@@ -72,6 +72,74 @@ export function buildRail(root, s, a) {
     { ghost: true, click: a.toggleRail }));
 }
 
+/* ===== полоса инструментов (узкий экран) ===== */
+
+export function buildBar(root, s, a) {
+  root.innerHTML = '';
+  const seg = document.createElement('div');
+  seg.className = 'modeseg';
+  for (const [m, name] of [['walls', 'walls'], ['grow', 'grow']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = s.mode === m ? 'on' : '';
+    b.title = m === 'walls' ? 'стены' : 'рост';
+    b.disabled = m === 'grow' && !s.canGrow;
+    b.innerHTML = icon(name);
+    b.addEventListener('click', () => a.setMode(m));
+    seg.append(b);
+  }
+  root.append(seg);
+
+  const tools = document.createElement('div');
+  tools.className = 'tools';
+  const add = (n, l, o) => tools.append(barButton(n, l, o));
+  if (s.mode === 'walls') {
+    add('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') });
+    add('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') });
+    add('undo', 'отменить', { ghost: true, disabled: !s.canUndo, click: a.undo });
+  } else {
+    const done = s.growthState === 'done';
+    add(s.playing && !done ? 'pause' : 'play', done ? 'готово' : 'пауза', { disabled: done, click: a.togglePause });
+    add('restart', 'заново', { ghost: true, click: a.restart });
+    add('auto', 'растить само', { on: s.auto, click: a.toggleAuto });
+  }
+  root.append(tools);
+  root.append(barButton('settings', 'настройки', { on: s.panelOpen, click: a.togglePanel }));
+  root.append(barButton('save', 'сохранить', { ghost: true, act: 'save', click: a.save }));
+}
+
+function barButton(name, label, o = {}) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 't' + (o.on ? ' on' : '') + (o.ghost ? ' ghost' : '');
+  b.title = label;
+  if (o.act) b.dataset.act = o.act;
+  b.disabled = !!o.disabled;
+  b.innerHTML = icon(name) + `<span class="lbl">${label}</span>`;
+  if (o.click) b.addEventListener('click', o.click);
+  return b;
+}
+
+/* Ряд редких команд наверху мобильного листа — им не хватило места в полосе. */
+export function buildQuick(root, s, a) {
+  const row = document.createElement('div');
+  row.className = 'quick';
+  if (s.mode === 'walls') {
+    row.innerHTML = `<button data-q="svg">${icon('svg')}вставить SVG</button>`
+      + `<button data-q="clear">${icon('clear')}очистить</button>`;
+  } else {
+    row.innerHTML = `<button data-q="eye">${icon(s.seeWalls ? 'eye' : 'eye-off')}стены</button>`
+      + `<button data-q="tempo">${icon('auto')}темп</button>`;
+  }
+  row.addEventListener('click', e => {
+    const q = e.target.closest('[data-q]')?.dataset.q;
+    if (q === 'svg') a.importSVG();
+    if (q === 'clear') a.clearWalls();
+    if (q === 'eye') a.toggleWalls();
+  });
+  root.prepend(row);
+}
+
 /* В компактной рейке ползунка не видно, поэтому строка работает кнопкой:
    разворачивает рейку и отдаёт фокус ползунку, чтобы управление не было мёртвым. */
 function tempo(s, a) {

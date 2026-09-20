@@ -7,7 +7,7 @@ import {
   setField, aspect, ratioLabel, at, inBounds, clipField,
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
-import { buildRail, buildSettings } from './ui.js';
+import { buildRail, buildSettings, buildBar, buildQuick } from './ui.js';
 
 const INK = '#f1ede5';
 const PAPER = '#161616';
@@ -855,7 +855,8 @@ function closePopover() {
 
 function openSavePopover() {
   if (popover) { closePopover(); return; }
-  const anchor = [...document.querySelectorAll('#rail button.t')].find(b => b.dataset.act === 'save');
+  const anchors = [...document.querySelectorAll('#rail button.t[data-act="save"], #bar button.t[data-act="save"]')];
+  const anchor = anchors.find(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; }) || anchors[0];
   popover = document.createElement('div');
   popover.className = 'popover';
   popover.innerHTML = '<button data-fmt="png">PNG</button><button data-fmt="svg">SVG</button>';
@@ -878,7 +879,7 @@ function openSavePopover() {
 }
 
 document.addEventListener('pointerdown', e => {
-  if (popover && !popover.contains(e.target) && !e.target.closest('#rail button.t')) closePopover();
+  if (popover && !popover.contains(e.target) && !e.target.closest('#rail button.t, #bar button.t')) closePopover();
 });
 
 const actions = {
@@ -929,11 +930,39 @@ function updateControls(force = false) {
   buildRail(document.getElementById('rail'), s, actions);
   document.getElementById('col').className = 'col' + (panelOpen ? ' open' : '');
   buildSettings(document.getElementById('colIn'), mode, values, actions, svgOverlay);
+
+  const narrow = matchMedia('(max-width: 720px)').matches;
+  if (narrow) {
+    buildBar(document.getElementById('bar'), s, actions);
+    const ms = document.getElementById('msheet');
+    ms.className = 'msheet settings' + (panelOpen ? ' open' : '');
+    buildSettings(ms, mode, values, actions, svgOverlay);
+    if (mode === 'grow') ms.prepend(tempoField());
+    buildQuick(ms, s, actions);
+    requestAnimationFrame(() => fitCanvas(panelOpen ? ms.offsetHeight : 0));
+  } else {
+    fitCanvas();
+  }
 }
 
 function patchTempo(s) {
   const num = document.querySelector('#rail .tempo .num');
   if (num) num.textContent = `${s.speed}×`;
+}
+
+/* Ползунок темпа в мобильном листе: как field() в ui.js, обновляет
+   собственную подпись из своего же обработчика — patchTempo его не видит. */
+function tempoField() {
+  const l = document.createElement('label');
+  l.className = 'field';
+  l.innerHTML = `<span>темп · ${num('speed')}</span>`
+    + `<input type="range" min="1" max="16" step="1" value="${num('speed')}">`;
+  const cap = l.querySelector('span'), input = l.querySelector('input');
+  input.addEventListener('input', () => {
+    cap.textContent = `темп · ${input.value}`;
+    actions.setSpeed(Number(input.value));
+  });
+  return l;
 }
 
 function setMode(newMode) {
@@ -1126,10 +1155,51 @@ function frame(now) {
 
 /* ===== инициализация ===== */
 
+/* ===== полоса на телефоне: долгий тап на кисти/ластике открывает размер ===== */
+
+let holdTimer = 0;
+let holdFired = false;
+document.getElementById('bar').addEventListener('pointerdown', e => {
+  holdFired = false;
+  const b = e.target.closest('button.t');
+  if (!b || !/кисть|ластик/.test(b.title)) return;
+  holdTimer = setTimeout(() => {
+    holdFired = true;
+    const pop = document.getElementById('brushpop');
+    pop.classList.add('open');
+    pop.querySelector('input').value = num('brush');
+    document.getElementById('bpval').textContent = num('brush');
+  }, 450);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  document.getElementById('bar').addEventListener(ev, () => clearTimeout(holdTimer));
+}
+/* Перехват в фазе захвата: успевает раньше клик-обработчика кнопки,
+   который иначе после долгого тапа ещё и переключит инструмент. */
+document.getElementById('bar').addEventListener('click', e => {
+  if (holdFired) { e.stopPropagation(); e.preventDefault(); }
+}, true);
+document.getElementById('brushpop').addEventListener('input', e => {
+  actions.setValue('brush', Number(e.target.value));
+  document.getElementById('bpval').textContent = e.target.value;
+});
+document.addEventListener('pointerdown', e => {
+  const pop = document.getElementById('brushpop');
+  if (pop.classList.contains('open') && !pop.contains(e.target) && !e.target.closest('#bar')) {
+    pop.classList.remove('open');
+  }
+});
+
 applyField(values.shape, values.proportion);
 load();
 setBrush(values.brush);
-new ResizeObserver(() => fitCanvas()).observe(document.getElementById('stage'));
+/* Уведомления ResizeObserver приходят уже после requestAnimationFrame того же
+   кадра, поэтому голый fitCanvas() здесь переписал бы верный отступ под лист
+   нулём — пересчитываем отступ так же, как updateControls(). */
+new ResizeObserver(() => {
+  const narrow = matchMedia('(max-width: 720px)').matches;
+  fitCanvas(narrow && panelOpen ? document.getElementById('msheet').offsetHeight : 0);
+}).observe(document.getElementById('stage'));
 addEventListener('resize', resize);
 resize();
 updateControls();

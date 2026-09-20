@@ -128,7 +128,7 @@ button.t:hover:not(:disabled) { background: #2c2c29; }
 button.t:disabled { opacity: .35; cursor: default; }
 button.t.on { background: var(--fg); color: var(--bg); }
 button.t.ghost { color: var(--muted); }
-button.t .ic { width: 18px; height: 18px; flex: none; stroke: currentColor; stroke-width: 1.5; fill: none;
+.ic { width: 18px; height: 18px; flex: none; stroke: currentColor; stroke-width: 1.5; fill: none;
   stroke-linecap: round; stroke-linejoin: round; }
 button.t .lbl, button.t .k { opacity: 0; transition: opacity .12s ease; }
 button.t .k { margin-left: auto; font-size: 10px; color: #6f6d67; }
@@ -142,6 +142,40 @@ button.t.on .k { color: #5a5a55; }
 .rail:not(.wide) .tempo { cursor: pointer; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ===== мобильная раскладка ===== */
+@media (max-width: 720px) {
+  main { flex-direction: column; }
+  .rail, .col { display: none; }
+  .bar { display: flex !important; flex: none; align-items: center; gap: 5px; padding: 0 8px;
+    height: calc(58px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg); border-top: 1px solid var(--border); z-index: 3; }
+  .bar .modeseg { display: flex; flex: none; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .bar .modeseg button { width: 44px; height: 42px; border: 0; background: transparent; color: var(--muted);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
+  .bar .modeseg button.on { background: var(--fg); color: var(--bg); }
+  .bar .tools { display: flex; gap: 4px; flex: 1; justify-content: center; }
+  .bar button.t { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .bar button.t .lbl, .bar button.t .k { display: none; }
+  .msheet { display: block !important; position: absolute; left: 0; right: 0;
+    bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 2; max-height: 52%; overflow-y: auto;
+    background: var(--panel); border-top: 1px solid var(--border); padding: 12px 14px;
+    transform: translateY(101%); transition: transform .22s var(--ease); }
+  .msheet.open { transform: none; }
+  .msheet .quick { display: flex; gap: 5px; margin-bottom: 12px; }
+  .msheet .quick button { flex: 1; height: 40px; border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center;
+    justify-content: center; gap: 7px; font: inherit; font-size: 11px; }
+  .brushpop { display: flex !important; position: absolute; left: 8px; right: 8px;
+    bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 4; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #1c1c1bf5;
+    backdrop-filter: blur(8px); color: var(--muted); font-size: 11px;
+    opacity: 0; transform: translateY(6px); pointer-events: none;
+    transition: opacity .14s ease, transform .14s var(--ease); }
+  .brushpop.open { opacity: 1; transform: none; pointer-events: auto; }
+  .brushpop input { flex: 1; accent-color: var(--fg); }
+}
+@media (min-width: 721px) { .bar, .msheet, .brushpop { display: none !important; } }
 </style>
 </head>
 <body>
@@ -176,6 +210,11 @@ button.t.on .k { color: #5a5a55; }
       <span id="hint">нарисуйте стены — вокруг них пойдёт рост</span>
     </div>
     <div id="message" role="alert" hidden></div>
+  </div>
+  <div class="bar" id="bar" aria-label="Инструменты" hidden></div>
+  <div class="msheet settings" id="msheet" hidden></div>
+  <div class="brushpop" id="brushpop" hidden>
+    <span>размер</span><input type="range" min="2" max="26" value="6" aria-label="Размер кисти"><span id="bpval">6</span>
   </div>
 </main>
 <span id="note" class="sr-only" role="status"></span>
