@@ -937,12 +937,12 @@ function buildPanel() {
   if (mode === 'walls') {
     makePick('shape', 'форма холста', ['rect', 'oval'], () => {
       applyField(values.shape, values.proportion);
-      resize(); rebuildWallCanvas(); updateGrowButton();
+      resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true);
     });
     const proportionInput = makeRange('proportion', 'пропорция', -1, 1, 0.05);
     proportionInput.addEventListener('change', () => {
       applyField(values.shape, values.proportion);
-      resize(); rebuildWallCanvas(); updateGrowButton();
+      resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true);
     });
     hr();
     makeButton('очистить стены', clearWalls);
@@ -1025,19 +1025,34 @@ const actions = {
   setSpeed: v => { values.speed = v; updateControls(); saveSoon(); },
   toggleAuto: () => { values.auto = !values.auto; wake(); updateControls(); saveSoon(); },
   toggleWalls: () => { values.showWalls = !values.showWalls; updateControls(); saveSoon(); },
-  togglePanel: () => { panelOpen = !panelOpen; updateControls(); fitCanvas(); saveSoon(); },
+  togglePanel: () => { panelOpen = !panelOpen; updateControls(true); fitCanvas(); saveSoon(); },
   save: () => openSavePopover(),
-  toggleRail: () => { railWide = !railWide; updateControls(); fitCanvas(); saveSoon(); },
+  toggleRail: () => { railWide = !railWide; updateControls(true); fitCanvas(); saveSoon(); },
 };
 
-function updateControls() {
-  buildRail(document.getElementById('rail'), uiState(), actions);
-  document.getElementById('col').hidden = !panelOpen;
-  if (panelOpen) buildPanel();
+/* Пересборка рейки и колонки убивает фокус и рвёт перетаскивание ползунков
+   (темп, панельные range), поэтому от полной пересборки защищаемся подписью
+   структуры: значения (speed и прочие values.*) в неё не входят — движение
+   ползунка обновляет только число рядом с ним через patchTempo(). */
+let lastSig = '';
+function updateControls(force = false) {
+  const s = uiState();
   const note = document.getElementById('note');
   note.textContent = svgOverlay
     ? 'размещение SVG'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
+  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG,
+               s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls].join('|');
+  if (!force && sig === lastSig) { patchTempo(s); return; }
+  lastSig = sig;
+  buildRail(document.getElementById('rail'), s, actions);
+  document.getElementById('col').hidden = !panelOpen;
+  if (panelOpen) buildPanel();
+}
+
+function patchTempo(s) {
+  const num = document.querySelector('#rail .tempo .num');
+  if (num) num.textContent = `${s.speed}×`;
 }
 
 function setMode(newMode) {
@@ -1056,7 +1071,7 @@ function setMode(newMode) {
     startGrowth();
   }
   debt = 0;
-  updateControls();
+  updateControls(true);
   updateHint();
 }
 
