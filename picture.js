@@ -104,7 +104,9 @@ export function binarize(img, { threshold, blur = 0, invert = false, maxSide }) 
   const solid = new Uint8Array(total);
   for (let i = 0; i < total; i += 1) {
     solid[i] = data[i * 4 + 3] >= 250 ? 1 : 0;
-    luma[i] = lumaOf(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]);
+    /* Прозрачное при размытии считается светлым: иначе полупрозрачная кайма
+       затягивает соседние пиксели ниже порога и обрастает ложной стеной. */
+    luma[i] = solid[i] ? lumaOf(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) : 255;
   }
   const smooth = boxBlur(luma, canvas.width, canvas.height, Math.round(blur));
   const cut = threshold / 100 * 255;
