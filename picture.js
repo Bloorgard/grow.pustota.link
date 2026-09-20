@@ -75,10 +75,16 @@ function boxBlur(src, w, h, radius) {
   return out;
 }
 
-/* Доля прозрачных пикселей больше этой — картинка уже силуэт, порог не нужен.
-   Пять процентов: полупрозрачная кайма по краю вырезанного объекта занимает
-   единицы процентов и не должна уводить картинку в режим яркости. */
+/* Доля прозрачных пикселей больше этой — объект вырезан из фона.
+   Пять процентов: полупрозрачная кайма по краю занимает единицы процентов. */
 const CLEAR_SHARE = 0.05;
+
+/* Доля двух самых крупных корзин гистограммы выше этой — плоская графика:
+   логотип, надпись, наши же экспортированные стены. Ниже — фотография.
+   У силуэта с мягким краем две корзины собирают больше 0.9, у фотографии
+   редко набирается и половина, так что 0.7 стоит с запасом в обе стороны. */
+const PLAIN_SHARE = 0.7;
+const BINS = 32;
 
 /* Единица ползунка — один пиксель на копии длиной BLUR_BASE. Копий две,
    разного размера (предпросмотр и запекание), и без пересчёта одно и то же
@@ -91,19 +97,31 @@ export function analyze(img) {
   const data = g.getImageData(0, 0, canvas.width, canvas.height).data;
   const total = canvas.width * canvas.height;
   const hist = new Uint32Array(256);
+  const bins = new Uint32Array(BINS);
   let clear = 0;
   for (let i = 0; i < total; i += 1) {
     if (data[i * 4 + 3] < 250) { clear += 1; continue; }
-    hist[lumaOf(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) | 0] += 1;
+    const v = lumaOf(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) | 0;
+    hist[v] += 1;
+    bins[(v * BINS / 256) | 0] += 1;
   }
-  if (clear > total * CLEAR_SHARE) return { mode: 'alpha', threshold: 50, invert: false };
   const opaque = total - clear;
+  if (!opaque) return { binary: false, threshold: 50, invert: false };
+
+  /* Два вопроса, а не один. Непрозрачной картинке порог нужен всегда —
+     иначе стеной станет весь её прямоугольник. Вырезанной из фона он нужен
+     только тогда, когда внутри силуэта настоящая фотография, а не заливка. */
+  const cutOut = clear > total * CLEAR_SHARE;
+  const top = [...bins].sort((a, b) => b - a);
+  const plain = (top[0] + top[1]) / opaque > PLAIN_SHARE;
+  const binary = !cutOut || !plain;
+
   const cut = otsu(hist, opaque);
   let dark = 0;
   for (let v = 0; v < cut; v += 1) dark += hist[v];
   /* Стеной становится меньшинство: тёмный объект на светлом фоне или
      светлый на тёмном. Промах поправляется кнопкой «инвертировать». */
-  return { mode: 'luma', threshold: Math.round(cut / 255 * 100), invert: dark > opaque / 2 };
+  return { binary, threshold: Math.round(cut / 255 * 100), invert: dark > opaque / 2 };
 }
 
 export function binarize(img, { threshold, blur = 0, invert = false, maxSide = 1600 }) {

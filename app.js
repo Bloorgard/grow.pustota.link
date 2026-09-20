@@ -296,7 +296,7 @@ const PREVIEW_BAKE = 1600;
 /* Одна развилка на оба случая: предпросмотр и запекание должны считаться
    одинаково, иначе применение даст не то, что было видно на холсте. */
 function bakedImage(o, maxSide) {
-  return o.mode === 'luma'
+  return o.binary
     ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide })
     : null;
 }
@@ -337,12 +337,12 @@ function loadPicture(file) {
       const ia = (img.naturalWidth || 300) / (img.naturalHeight || 300);
       let h = 0.6, w = h * ia / AR;
       if (w > 0.6) { w = 0.6; h = w * AR / ia; }
-      const { mode, threshold, invert } = analyze(img);
+      const { binary, threshold, invert } = analyze(img);
       svgOverlay = {
         img, src, ia, h, baseH: h,
         x: (1 - w) / 2, y: (1 - h) / 2,
         dragging: false, grabDx: 0, grabDy: 0,
-        mode, threshold, blur: 0, invert, shown: img,
+        binary, threshold, blur: 0, invert, shown: img,
       };
       refreshPreview();
       hasInteracted = true;
@@ -1064,7 +1064,7 @@ function uiState() {
     mode, tool: wallTool, railWide, panelOpen,
     playing: !paused, auto: on('auto'), seeWalls: on('showWalls'),
     speed: num('speed'), canUndo: undoStack.length > 0, canGrow: wallsPresent || !!growth,
-    placingSVG: !!svgOverlay, svgMode: svgOverlay?.mode || '', svgInvert: !!svgOverlay?.invert, growthState: growthState(),
+    placingSVG: !!svgOverlay, svgBinary: !!svgOverlay?.binary, svgInvert: !!svgOverlay?.invert, growthState: growthState(),
   };
 }
 
@@ -1162,6 +1162,12 @@ const actions = {
     refreshPreview();
     updateControls(true);
   },
+  toggleBinary: () => {
+    if (!svgOverlay) return;
+    svgOverlay.binary = !svgOverlay.binary;
+    refreshPreview();
+    updateControls(true);
+  },
 };
 
 /* Пересборка рейки и колонки убивает фокус и рвёт перетаскивание ползунков
@@ -1176,7 +1182,7 @@ function updateControls(force = false) {
     ? 'размещение картинки'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   const narrow = matchMedia('(max-width: 720px)').matches;
-  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG, s.svgMode, s.svgInvert,
+  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG, s.svgBinary, s.svgInvert,
                s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls, narrow].join('|');
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;

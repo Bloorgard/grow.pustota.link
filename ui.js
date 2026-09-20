@@ -237,10 +237,16 @@ export function buildSettings(root, mode, values, a, svg) {
     });
     root.append(l);
 
-    /* Порог нужен только непрозрачной картинке: у силуэта с прозрачным
-       фоном регулировать нечего, и показывать мёртвый ползунок хуже,
-       чем не показывать ничего. */
-    if (svg.mode === 'luma') {
+    /* Автомат ошибается на пограничных картинках, поэтому переключатель
+       виден всегда: им и включают порог, и отказываются от него. */
+    const bin = document.createElement('button');
+    bin.type = 'button';
+    bin.className = 't ghost wide-btn' + (svg.binary ? ' on' : '');
+    bin.innerHTML = icon('contrast') + '<span class="lbl">два тона</span>';
+    bin.addEventListener('click', a.toggleBinary);
+    root.append(bin);
+
+    if (svg.binary) {
       const th = document.createElement('label');
       th.className = 'field';
       th.dataset.key = 'threshold';
