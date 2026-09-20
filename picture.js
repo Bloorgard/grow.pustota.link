@@ -26,7 +26,7 @@ function otsu(hist, total) {
   if (!total) return 128;
   let sum = 0;
   for (let v = 0; v < 256; v += 1) sum += v * hist[v];
-  let sumB = 0, countB = 0, best = 128, bestVariance = -1;
+  let sumB = 0, countB = 0, bestFrom = 128, bestTo = 128, bestVariance = -1;
   for (let v = 0; v < 256; v += 1) {
     countB += hist[v];
     if (!countB) continue;
@@ -36,9 +36,12 @@ function otsu(hist, total) {
     const meanB = sumB / countB;
     const meanF = (sum - sumB) / countF;
     const between = countB * countF * (meanB - meanF) ** 2;
-    if (between > bestVariance) { bestVariance = between; best = v; }
+    /* Плато: у двух ровных пиков дисперсия одинакова на всём промежутке
+       между ними, и порог надо ставить посередине, а не у первого края. */
+    if (between > bestVariance) { bestVariance = between; bestFrom = v; bestTo = v; }
+    else if (between === bestVariance) bestTo = v;
   }
-  return best;
+  return (bestFrom + bestTo) >> 1;
 }
 
 /* Разделимое коробчатое размытие: два прохода по строкам и столбцам.
@@ -95,7 +98,7 @@ export function analyze(img) {
   return { mode: 'luma', threshold: Math.round(cut / 255 * 100), invert: dark > opaque / 2 };
 }
 
-export function binarize(img, { threshold, blur = 0, invert = false, maxSide }) {
+export function binarize(img, { threshold, blur = 0, invert = false, maxSide = 1600 }) {
   const { canvas, g } = drawScaled(img, maxSide);
   const image = g.getImageData(0, 0, canvas.width, canvas.height);
   const data = image.data;
