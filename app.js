@@ -1,13 +1,12 @@
 /* grow.pustota.link — обрастание вокруг пользовательских стен и SVG.
    Механика роста из буквы Ю (alphabet.pustota.link), режим «обрастание».
-   Правки: стены рисует пользователь, SVG-источник, экспорт, отмена, размер холста. */
+   Стены хранятся как векторные штрихи: сетка нужна только для столкновений. */
 
-const GRID = 420;
+const GRID_BASE = 420;
 const INK = '#f1ede5';
 const PAPER = '#161616';
 const RED = '#e0210f';
 const MUTED = 'rgba(241,237,229,.45)';
-const FAINT = 'rgba(241,237,229,.12)';
 const STEP = 1 / 60;
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -17,213 +16,317 @@ const TRAIL_STEP = 0.06;
 const MAX_TIPS = 520;
 const MAX_SEGMENTS = 160000;
 const EDGE = 0.035;
+const EXPORT_LONG_SIDE = 2048;
 const ASPECTS = { 'квадрат': 1, 'широко': 4 / 3, 'высоко': 3 / 4, 'лист': 5 / 4 };
+const STORE_KEY = 'grow.pustota.v1';
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W = 600, H = 600, Sx = 600, Sy = 600, ox = 0, oy = 0, dpr = 1;
-let frameId = 0, last = performance.now(), debt = 0;
+const sheet = document.getElementById('sheet');
+let Sx = 600, Sy = 600, dpr = 1;
+let last = performance.now(), debt = 0;
 let paused = false;
 let mode = 'walls';
+let hasInteracted = false;
 
-let walls = new Uint8Array(GRID * GRID);
-let wallDirty = true;
-const wallCanvas = document.createElement('canvas');
-wallCanvas.width = GRID; wallCanvas.height = GRID;
-const wallHistory = [];
-const MAX_UNDO = 30;
+/* ===== параметры ===== */
 
-let brushSize = 6;
-let brushErase = false;
-let wallDrawing = false;
-let lastWall = null;
-
-/* SVG-оверлей: загруженная SVG как перегородки, с позиционированием. */
-let svgOverlay = null;
-let svgPlacing = false;
-window.svgOverlay = svgOverlay;
-window.svgPlacing = svgPlacing;
-
-const pointer = { x: 0.5, y: 0.5, id: null, down: false, px: 0.5, py: 0.5 };
-let growth = null;
-
-const values = {
+const DEFAULTS = {
   auto: true, showWalls: false,
   speed: 8, mass: 5, branch: 5, seeds: 7, crowd: 12,
   sow: 1, gap: 0.007, step: 0.009,
   wander: 1, straight: 0.14, pull: 0.55, life: 3,
   format: 'квадрат', brush: 6,
 };
+const GROWTH_KEYS = ['speed', 'mass', 'branch', 'seeds', 'crowd', 'sow', 'gap', 'step', 'wander', 'straight', 'pull', 'life'];
+const PRESETS = {
+  'мох':   { speed: 8, mass: 5, branch: 5, seeds: 7, crowd: 12, sow: 1, gap: 0.007, step: 0.009, wander: 1, straight: 0.14, pull: 0.55, life: 3 },
+  'иней':  { speed: 12, mass: 2, branch: 8, seeds: 10, crowd: 24, sow: 0, gap: 0.004, step: 0.006, wander: 1.6, straight: 0.3, pull: 0.4, life: 1.5 },
+  'плети': { speed: 10, mass: 3, branch: 1, seeds: 4, crowd: 8, sow: 1, gap: 0.013, step: 0.021, wander: 0.4, straight: 0.6, pull: 0.9, life: 6 },
+  'корни': { speed: 6, mass: 7, branch: 2, seeds: 3, crowd: 6, sow: 0, gap: 0.02, step: 0.024, wander: 0.8, straight: 0.45, pull: 1.2, life: 5 },
+};
+
+const values = { ...DEFAULTS };
 const num = key => Number(values[key]);
 const on = key => !!values[key];
 
-/* ===== координаты ===== */
+/* ===== сетка столкновений =====
+   Пропорции сетки следуют формату холста, поэтому её ячейки квадратные
+   на экране, и рост не растягивается на неквадратных листах. */
+
+let AR = 1;
+let GX = GRID_BASE, GY = GRID_BASE;
+let walls = new Uint8Array(GX * GY);
+let wallCells = [];
+let wallsPresent = false;
+let gridDirty = true;
+const gridCanvas = document.createElement('canvas');
+
+/* Длины задаются в долях высоты холста; по горизонтали делим на пропорцию. */
+const dxOf = (a, len) => Math.cos(a) * len / AR;
+const dyOf = (a, len) => Math.sin(a) * len;
+const angleTo = (x0, y0, x1, y1) => Math.atan2(y1 - y0, (x1 - x0) * AR);
+const distOf = (x0, y0, x1, y1) => Math.hypot((x1 - x0) * AR, y1 - y0);
 
 function at(x, y) {
-  const ix = Math.floor(x * GRID);
-  const iy = Math.floor(y * GRID);
-  return ix < 0 || iy < 0 || ix >= GRID || iy >= GRID ? -1 : iy * GRID + ix;
+  const ix = Math.floor(x * GX);
+  const iy = Math.floor(y * GY);
+  return ix < 0 || iy < 0 || ix >= GX || iy >= GY ? -1 : iy * GX + ix;
 }
 
-function open(x, y) { return x > EDGE && x < 1 - EDGE && y > EDGE && y < 1 - EDGE; }
+function inBounds(x, y) {
+  const mx = EDGE / AR;
+  return x > mx && x < 1 - mx && y > EDGE && y < 1 - EDGE;
+}
 
-/* ===== стены: кисть, отмена ===== */
+function setGrid() {
+  AR = ASPECTS[values.format] || 1;
+  GX = Math.max(1, Math.round(GRID_BASE * AR));
+  GY = GRID_BASE;
+  walls = new Uint8Array(GX * GY);
+  gridDirty = true;
+  if (growth) {
+    growth.grown = new Uint8Array(GX * GY);
+    rebuildGrowthMask();
+  }
+}
 
-function snapshotWalls() {
-  wallHistory.push(new Uint8Array(walls));
-  if (wallHistory.length > MAX_UNDO) wallHistory.shift();
+/* ===== стены: штрихи ===== */
+
+let wallOps = [];
+let undoStack = [];
+let current = null;
+let brushErase = false;
+const wallCanvas = document.createElement('canvas');
+
+const brushRadius = () => num('brush') / GRID_BASE;
+
+function drawOp(g, PW, PH, op, plain) {
+  if (op.k === 'svg') {
+    if (!op.img) return;
+    const x = op.x * PW, y = op.y * PH, w = op.w * PW, h = op.h * PH;
+    g.globalCompositeOperation = 'source-over';
+    if (plain) { g.drawImage(op.img, x, y, w, h); return; }
+    const scratch = document.createElement('canvas');
+    scratch.width = Math.max(1, Math.round(w));
+    scratch.height = Math.max(1, Math.round(h));
+    const sg = scratch.getContext('2d');
+    sg.filter = 'brightness(0)';
+    sg.drawImage(op.img, 0, 0, scratch.width, scratch.height);
+    sg.filter = 'none';
+    sg.globalCompositeOperation = 'source-in';
+    sg.fillStyle = INK;
+    sg.fillRect(0, 0, scratch.width, scratch.height);
+    g.drawImage(scratch, x, y, w, h);
+    return;
+  }
+  const pts = op.pts;
+  if (!pts.length) return;
+  g.globalCompositeOperation = op.erase ? 'destination-out' : 'source-over';
+  g.strokeStyle = INK;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.lineWidth = Math.max(0.8, op.r * 2 * PH);
+  g.beginPath();
+  g.moveTo(pts[0][0] * PW, pts[0][1] * PH);
+  if (pts.length === 1) g.lineTo(pts[0][0] * PW + 0.01, pts[0][1] * PH);
+  else for (let i = 1; i < pts.length; i += 1) g.lineTo(pts[i][0] * PW, pts[i][1] * PH);
+  g.stroke();
+  g.globalCompositeOperation = 'source-over';
+}
+
+function paintOps(g, PW, PH, plain) {
+  for (const op of wallOps) drawOp(g, PW, PH, op, plain);
+}
+
+function rebuildWallCanvas() {
+  wallCanvas.width = Math.max(1, Math.round(Sx * dpr));
+  wallCanvas.height = Math.max(1, Math.round(Sy * dpr));
+  const g = wallCanvas.getContext('2d');
+  g.clearRect(0, 0, wallCanvas.width, wallCanvas.height);
+  paintOps(g, wallCanvas.width, wallCanvas.height, false);
+  if (current) drawOp(g, wallCanvas.width, wallCanvas.height, current, false);
+}
+
+/* Досовываем только последний отрезок — перерисовывать всё каждый кадр незачем. */
+function strokeLive(p0, p1) {
+  const g = wallCanvas.getContext('2d');
+  drawOp(g, wallCanvas.width, wallCanvas.height, { k: 'b', erase: brushErase, r: brushRadius(), pts: [p0, p1] }, false);
+}
+
+/* Растеризация штрихов в сетку столкновений. */
+function ensureGrid() {
+  if (!gridDirty) return;
+  gridCanvas.width = GX;
+  gridCanvas.height = GY;
+  const g = gridCanvas.getContext('2d');
+  g.clearRect(0, 0, GX, GY);
+  paintOps(g, GX, GY, true);
+  const data = g.getImageData(0, 0, GX, GY).data;
+  walls.fill(0);
+  wallCells = [];
+  wallsPresent = false;
+  for (let i = 0; i < GX * GY; i += 1) {
+    if (data[i * 4 + 3] <= 32) continue;
+    walls[i] = 1;
+    wallsPresent = true;
+    const ix = i % GX, iy = (i / GX) | 0;
+    if (ix % 3 === 0 && iy % 3 === 0) wallCells.push(i);
+  }
+  if (wallsPresent && !wallCells.length) {
+    for (let i = 0; i < walls.length; i += 1) if (walls[i]) wallCells.push(i);
+  }
+  gridDirty = false;
+}
+
+function pushUndo() {
+  undoStack.push(wallOps.slice());
+  if (undoStack.length > 80) undoStack.shift();
+  document.getElementById('undo').disabled = false;
 }
 
 function undoWalls() {
-  if (!wallHistory.length) return;
-  walls = wallHistory.pop();
-  wallDirty = true;
+  if (!undoStack.length) return;
+  wallOps = undoStack.pop();
+  document.getElementById('undo').disabled = !undoStack.length;
+  gridDirty = true;
+  rebuildWallCanvas();
   updateGrowButton();
+  saveSoon();
 }
 
-function paintWall(x, y) {
-  const r = brushSize;
-  const ci = Math.round(x * GRID);
-  const cj = Math.round(y * GRID);
-  for (let j = cj - r; j <= cj + r; j += 1) {
-    for (let i = ci - r; i <= ci + r; i += 1) {
-      if (i < 0 || j < 0 || i >= GRID || j >= GRID) continue;
-      if ((i - ci) ** 2 + (j - cj) ** 2 > r * r) continue;
-      walls[j * GRID + i] = brushErase ? 0 : 1;
-    }
-  }
-  wallDirty = true;
+function clearWalls() {
+  pushUndo();
+  wallOps = [];
+  gridDirty = true;
+  rebuildWallCanvas();
+  updateGrowButton();
+  saveSoon();
 }
 
-function paintWallLine(x0, y0, x1, y1) {
-  const dx = x1 - x0, dy = y1 - y0;
-  const dist = Math.hypot(dx, dy);
-  const steps = Math.max(1, Math.ceil(dist * GRID));
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    paintWall(x0 + dx * t, y0 + dy * t);
-  }
+/* ===== сообщение ===== */
+
+function showMessage(text = '') {
+  const message = document.getElementById('message');
+  message.textContent = text;
+  message.hidden = !text;
 }
 
-function renderWallCanvas() {
-  const g = wallCanvas.getContext('2d');
-  const img = g.createImageData(GRID, GRID);
-  for (let i = 0; i < GRID * GRID; i += 1) {
-    if (walls[i]) {
-      const k = i * 4;
-      img.data[k] = 241; img.data[k + 1] = 237; img.data[k + 2] = 229; img.data[k + 3] = 255;
-    }
-  }
-  g.putImageData(img, 0, 0);
-  wallDirty = false;
-}
+/* ===== загрузка SVG ===== */
+
+let svgOverlay = null;
+let importVersion = 0;
+const overlayWidth = o => o.h * o.ia / AR;
 
 function loadSVG(file) {
+  const version = ++importVersion;
+  showMessage();
+  const fail = () => {
+    if (version === importVersion) showMessage('Не удалось открыть SVG. Проверьте файл и попробуйте снова.');
+  };
   const reader = new FileReader();
+  reader.onerror = fail;
   reader.onload = () => {
-    let svgText = reader.result;
-    /* SVG из редакторов часто использует CSS-классы для fill/stroke, которые
-       не применяются при rasterization через Image. Добавляем явный fill. */
-    svgText = svgText.replace(/<(path|rect|circle|ellipse|polygon|polyline|line)\b/gi, '<$1 fill="black"');
+    if (version !== importVersion) return;
+    const svgText = reader.result;
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+    if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') {
+      fail();
+      return;
+    }
+    const src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
     const img = new Image();
+    img.onerror = fail;
     img.onload = () => {
-      const iw = img.naturalWidth || 300;
-      const ih = img.naturalHeight || 300;
-      /* Начальный масштаб: вписать в 60% холста, центрировать. */
-      const fitScale = Math.min(0.6 / (iw / GRID), 0.6 / (ih / GRID));
-      const dw = iw * fitScale, dh = ih * fitScale;
+      if (version !== importVersion) return;
+      setMode('walls');
+      const ia = (img.naturalWidth || 300) / (img.naturalHeight || 300);
+      let h = 0.6, w = h * ia / AR;
+      if (w > 0.6) { w = 0.6; h = w * AR / ia; }
       svgOverlay = {
-        img, w: iw, h: ih,
-        x: (GRID - dw) / 2 / GRID,
-        y: (GRID - dh) / 2 / GRID,
-        scale: fitScale,
+        img, src, ia, h, baseH: h,
+        x: (1 - w) / 2, y: (1 - h) / 2,
         dragging: false, grabDx: 0, grabDy: 0,
       };
-      svgPlacing = true;
-      window.svgOverlay = svgOverlay;
-      window.svgPlacing = svgPlacing;
+      hasInteracted = true;
+      syncSVGScale();
+      updateControls();
       updateHint();
       updateGrowButton();
-      if (!panel.hidden) buildPanel();
     };
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+    img.src = src;
   };
   reader.readAsText(file);
 }
 
-/* Применить SVG-оверлей: растеризовать в walls. */
 function applySVG() {
   if (!svgOverlay) return;
-  const { img, x, y, scale, w, h } = svgOverlay;
-  const dw = w * scale, dh = h * scale;
-  const dx = x * GRID, dy = y * GRID;
-  const tmp = document.createElement('canvas');
-  tmp.width = GRID; tmp.height = GRID;
-  const g = tmp.getContext('2d');
-  g.drawImage(img, dx, dy, dw, dh);
-  const data = g.getImageData(0, 0, GRID, GRID).data;
-  snapshotWalls();
-  for (let i = 0; i < GRID * GRID; i += 1) {
-    if (data[i * 4 + 3] > 32) walls[i] = 1;
-  }
-  wallDirty = true;
+  showMessage();
+  const o = svgOverlay;
+  pushUndo();
+  wallOps.push({ k: 'svg', src: o.src, img: o.img, x: o.x, y: o.y, w: overlayWidth(o), h: o.h });
   svgOverlay = null;
-  svgPlacing = false;
-  window.svgOverlay = null;
-  window.svgPlacing = false;
+  gridDirty = true;
+  rebuildWallCanvas();
+  updateControls();
   updateHint();
   updateGrowButton();
+  saveSoon();
 }
 
 function cancelSVG() {
+  showMessage();
   svgOverlay = null;
-  svgPlacing = false;
-  window.svgOverlay = null;
-  window.svgPlacing = false;
+  updateControls();
   updateHint();
   updateGrowButton();
 }
 
-function hasWalls() {
-  for (let i = 0; i < walls.length; i += 1) if (walls[i]) return true;
-  return false;
+function scaleSVG(nextH, cx, cy) {
+  const o = svgOverlay;
+  const oldW = overlayWidth(o), oldH = o.h;
+  o.h = clamp(nextH, o.baseH * 0.1, o.baseH * 5);
+  const w = overlayWidth(o);
+  o.x = cx - (cx - o.x) * (w / oldW);
+  o.y = cy - (cy - o.y) * (o.h / oldH);
+  syncSVGScale();
+}
+
+function syncSVGScale() {
+  if (!svgOverlay) return;
+  const pct = Math.round(svgOverlay.h / svgOverlay.baseH * 100);
+  document.getElementById('svg-scale').value = pct;
+  document.getElementById('svg-scale-label').textContent = `масштаб · ${pct}%`;
 }
 
 /* ===== рост ===== */
 
+let growth = null;
+let previousGrowth = null;
+const pointer = { x: -1, y: -1, id: null, down: false };
+let wallDrawing = false;
+
 function claim(x, y) {
-  const r = Math.max(1, Math.round(num('gap') * GRID));
-  const ci = Math.round(x * GRID), cj = Math.round(y * GRID);
+  const r = Math.max(1, Math.round(num('gap') * GY));
+  const ci = Math.round(x * GX), cj = Math.round(y * GY);
   for (let j = cj - r; j <= cj + r; j += 1) {
     for (let i = ci - r; i <= ci + r; i += 1) {
-      if (i < 0 || j < 0 || i >= GRID || j >= GRID) continue;
+      if (i < 0 || j < 0 || i >= GX || j >= GY) continue;
       if ((i - ci) ** 2 + (j - cj) ** 2 > r * r) continue;
-      growth.grown[j * GRID + i] = 1;
+      growth.grown[j * GX + i] = 1;
     }
   }
 }
 
 function nearWall(x, y, wallsOnly) {
-  const ix = Math.floor(x * GRID), iy = Math.floor(y * GRID);
-  const reach = Math.max(2, Math.round(GRID * (num('gap') + 0.008)));
+  const ix = Math.floor(x * GX), iy = Math.floor(y * GY);
+  const reach = Math.max(2, Math.round(GY * (num('gap') + 0.008)));
   for (let dy = -reach; dy <= reach; dy += 1) {
     for (let dx = -reach; dx <= reach; dx += 1) {
       const px = ix + dx, py = iy + dy;
-      if (px < 0 || py < 0 || px >= GRID || py >= GRID) continue;
-      const key = py * GRID + px;
+      if (px < 0 || py < 0 || px >= GX || py >= GY) continue;
+      const key = py * GX + px;
       if (walls[key] || (!wallsOnly && growth.grown[key])) return true;
-    }
-  }
-  return false;
-}
-
-function nearWallOnly(x, y) {
-  const ix = Math.floor(x * GRID), iy = Math.floor(y * GRID);
-  const reach = Math.max(2, Math.round(GRID * (num('gap') + 0.008)));
-  for (let dy = -reach; dy <= reach; dy += 1) {
-    for (let dx = -reach; dx <= reach; dx += 1) {
-      const px = ix + dx, py = iy + dy;
-      if (px >= 0 && py >= 0 && px < GRID && py < GRID && walls[py * GRID + px]) return true;
     }
   }
   return false;
@@ -232,13 +335,10 @@ function nearWallOnly(x, y) {
 function sprout(x, y, anyWall = false) {
   if (!anyWall) {
     let closest = null;
-    for (let iy = 0; iy < GRID; iy += 1) {
-      for (let ix = 0; ix < GRID; ix += 1) {
-        if (!walls[iy * GRID + ix]) continue;
-        const px = (ix + 0.5) / GRID, py = (iy + 0.5) / GRID;
-        const distance = (px - x) ** 2 + (py - y) ** 2;
-        if (!closest || distance < closest.distance) closest = { x: px, y: py, distance };
-      }
+    for (const idx of wallCells) {
+      const px = (idx % GX + 0.5) / GX, py = ((idx / GX | 0) + 0.5) / GY;
+      const distance = distOf(x, y, px, py);
+      if (!closest || distance < closest.distance) closest = { x: px, y: py, distance };
     }
     if (!closest) return;
     x = closest.x; y = closest.y;
@@ -247,21 +347,30 @@ function sprout(x, y, anyWall = false) {
     const wide = n > 300;
     const a = Math.random() * TAU;
     const r = 0.01 + Math.random() * (wide ? 0.5 : 0.045);
-    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    const px = x + dxOf(a, r), py = y + dyOf(a, r);
     const key = at(px, py);
-    if (key < 0 || !open(px, py) || walls[key] || growth.grown[key]) continue;
+    if (key < 0 || !inBounds(px, py) || walls[key] || growth.grown[key]) continue;
     const where = num('sow');
-    if (where === 0 && !nearWallOnly(px, py)) continue;
+    if (where === 0 && !nearWall(px, py, true)) continue;
     if (where === 1 && !nearWall(px, py, false)) continue;
     claim(px, py);
-    const aim = anyWall ? a : Math.atan2(y - py, x - px);
-    growth.tips.push({ x: px, y: py, a: aim, age: 0, life: (70 + Math.random() * 190) * num('life') });
+    growth.tips.push(makeTip(px, py, anyWall ? a : angleTo(px, py, x, y)));
     return;
   }
 }
 
+function makeTip(x, y, a, life) {
+  const mass = num('mass');
+  return {
+    id: growth.tipSeq += 1,
+    x, y, a, age: 0,
+    life: life || (70 + Math.random() * 190) * num('life'),
+    width: 0.0014 + mass * 0.00055 + Math.random() * mass * 0.00025,
+  };
+}
+
 function feed(x, y) {
-  if (!open(x, y)) return;
+  if (!inBounds(x, y)) return;
   if (nearWall(x, y, false)) {
     for (let i = 0; i < num('seeds'); i += 1) sprout(x, y, true);
   }
@@ -276,42 +385,75 @@ function grow(tip, index) {
     const spread = trial < 7 ? 1.75 : TAU;
     const a = tip.a + (Math.random() - 0.5) * spread * num('wander');
     const step = Math.max(num('step'), num('gap') * 1.35);
-    const x = tip.x + Math.cos(a) * step, y = tip.y + Math.sin(a) * step;
+    const x = tip.x + dxOf(a, step), y = tip.y + dyOf(a, step);
     const key = at(x, y);
-    if (key < 0 || !open(x, y) || walls[key] || growth.grown[key]) continue;
+    if (key < 0 || !inBounds(x, y) || walls[key] || growth.grown[key]) continue;
     let pull = Math.cos(a - tip.a) * num('straight');
     for (const food of growth.food) {
-      const target = Math.atan2(food.y - tip.y, food.x - tip.x);
-      const distance = Math.hypot(food.x - tip.x, food.y - tip.y);
+      const target = angleTo(tip.x, tip.y, food.x, food.y);
+      const distance = distOf(tip.x, tip.y, food.x, food.y);
       pull += Math.cos(a - target) * num('pull') / (0.08 + distance * 2.2);
     }
     if (!best || pull > best.pull) best = { x, y, a, pull };
   }
   if (!best || tip.age > tip.life) { growth.tips.splice(index, 1); return; }
   claim(best.x, best.y);
-  const mass = num('mass');
   const segment = {
-    x1: tip.x, y1: tip.y, x2: best.x, y2: best.y, born: growth.time,
-    width: 0.0014 + mass * 0.00055 + Math.random() * mass * 0.00025,
+    x1: tip.x, y1: tip.y, x2: best.x, y2: best.y,
+    t: tip.id, width: tip.width,
   };
   growth.segments.push(segment);
   strokeSegment(segment);
   tip.x = best.x; tip.y = best.y; tip.a = best.a; tip.age += 1;
   if (Math.random() < num('branch') * 0.012 && growth.tips.length < MAX_TIPS) {
-    growth.tips.push({
-      x: tip.x, y: tip.y, a: tip.a + (Math.random() - 0.5) * 1.4,
-      age: tip.age, life: tip.life * (0.55 + Math.random() * 0.35),
-    });
+    const child = makeTip(tip.x, tip.y, tip.a + (Math.random() - 0.5) * 1.4, tip.life * (0.55 + Math.random() * 0.35));
+    child.age = tip.age;
+    growth.tips.push(child);
   }
 }
 
 function startGrowth() {
   growth = {
-    grown: new Uint8Array(GRID * GRID),
+    grown: new Uint8Array(GX * GY),
     tips: [], segments: [], food: [],
-    time: 0, autoAt: 0.35, trail: null, leading: false,
+    time: 0, autoAt: 0.35, trail: null, leading: false, tipSeq: 0,
     surface: null, surfaceW: 0, surfaceH: 0,
   };
+}
+
+function rebuildGrowthMask() {
+  if (!growth) return;
+  growth.grown.fill(0);
+  for (const seg of growth.segments) {
+    claim(seg.x1, seg.y1);
+    claim(seg.x2, seg.y2);
+  }
+  for (const tip of growth.tips) claim(tip.x, tip.y);
+}
+
+function restartGrowth() {
+  if (mode !== 'grow') return;
+  release();
+  if (growth?.segments.length) previousGrowth = growth;
+  startGrowth();
+  paused = false;
+  debt = 0;
+  updateControls();
+  updateHint();
+}
+
+function restoreGrowth() {
+  if (!previousGrowth) return;
+  release();
+  growth = previousGrowth;
+  previousGrowth = null;
+  growth.surface = null;
+  rebuildGrowthMask();
+  paused = true;
+  debt = 0;
+  updateControls();
+  updateHint();
+  document.getElementById('pause').focus();
 }
 
 /* ===== поверхность роста ===== */
@@ -346,6 +488,7 @@ function strokeSegment(seg) {
 
 function growStep() {
   if (!growth) return;
+  ensureGrid();
   const m = growth;
   m.time += STEP;
   if (on('auto')) {
@@ -380,10 +523,10 @@ function growStep() {
 
   const attempts = Math.min(1 + num('speed') * 4, m.tips.length * 2);
   for (let i = 0; i < attempts; i += 1) {
-    const at = (Math.random() * m.tips.length) | 0;
-    const tip = m.tips[at];
+    const index = (Math.random() * m.tips.length) | 0;
+    const tip = m.tips[index];
     if (!tip) continue;
-    grow(tip, at);
+    grow(tip, index);
   }
   if (m.segments.length > MAX_SEGMENTS) {
     m.segments.splice(0, m.segments.length - MAX_SEGMENTS);
@@ -392,37 +535,16 @@ function growStep() {
 
 /* ===== рисование ===== */
 
-function drawCanvasFrame() {
-  ctx.strokeStyle = 'rgba(241,237,229,0.18)';
-  ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.004);
-  ctx.strokeRect(0, 0, Sx, Sy);
-}
-
-function drawOnboarding() {
-  if (mode !== 'walls' || hasWalls() || svgPlacing) return;
-  const Smin = Math.min(Sx, Sy);
-  ctx.fillStyle = 'rgba(241,237,229,0.2)';
-  ctx.font = `500 ${Math.round(Smin * 0.04)}px 'PT Sans', sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('рисуйте здесь', Sx / 2, Sy / 2);
-  ctx.textAlign = 'left';
-}
-
 function drawSVGOverlay() {
   if (!svgOverlay) return;
-  const { img, x, y, scale, w, h } = svgOverlay;
-  const dw = w * scale, dh = h * scale;
-  const dx = x * GRID, dy = y * GRID;
-  const px = dx / GRID * Sx;
-  const py = dy / GRID * Sy;
-  const pw = dw / GRID * Sx;
-  const ph = dh / GRID * Sy;
+  const o = svgOverlay;
+  const px = o.x * Sx, py = o.y * Sy;
+  const pw = overlayWidth(o) * Sx, ph = o.h * Sy;
   ctx.save();
-  ctx.globalAlpha = 0.5;
-  ctx.drawImage(img, px, py, pw, ph);
+  ctx.globalAlpha = 0.7;
+  ctx.filter = 'brightness(0) invert(1)';
+  ctx.drawImage(o.img, px, py, pw, ph);
   ctx.restore();
-  /* Рамка вокруг SVG. */
   ctx.strokeStyle = MUTED;
   ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.002);
   ctx.setLineDash([6, 4]);
@@ -431,22 +553,14 @@ function drawSVGOverlay() {
 }
 
 function wallDraw() {
-  if (wallDirty) renderWallCanvas();
-  if (hasWalls()) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(wallCanvas, 0, 0, Sx, Sy);
-    ctx.imageSmoothingEnabled = true;
-  }
+  ctx.drawImage(wallCanvas, 0, 0, Sx, Sy);
   if (svgOverlay) drawSVGOverlay();
-  drawCanvasFrame();
-  drawOnboarding();
-  if (pointer.x >= 0 && pointer.x <= 1 && pointer.y >= 0 && pointer.y <= 1 && !svgPlacing) {
-    const r = brushSize / GRID;
+  if (pointer.x >= 0 && pointer.x <= 1 && pointer.y >= 0 && pointer.y <= 1 && !svgOverlay) {
     const Smin = Math.min(Sx, Sy);
     ctx.strokeStyle = brushErase ? RED : MUTED;
     ctx.lineWidth = Math.max(1, Smin * 0.002);
     ctx.beginPath();
-    ctx.arc(pointer.x * Sx, pointer.y * Sy, r * Smin, 0, TAU);
+    ctx.ellipse(pointer.x * Sx, pointer.y * Sy, brushRadius() * Sy, brushRadius() * Sy, 0, 0, TAU);
     ctx.stroke();
   }
 }
@@ -454,10 +568,8 @@ function wallDraw() {
 function growDraw() {
   if (!growth) return;
   if (on('showWalls')) {
-    if (wallDirty) renderWallCanvas();
     ctx.save();
     ctx.globalAlpha = 0.22;
-    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(wallCanvas, 0, 0, Sx, Sy);
     ctx.restore();
   }
@@ -472,77 +584,103 @@ function growDraw() {
     ctx.lineWidth = Math.max(1, Smin * 0.002);
     ctx.stroke();
   }
-  drawCanvasFrame();
 }
 
-/* ===== экспорт ===== */
+/* ===== экспорт =====
+   И стены, и ветви хранятся векторно, поэтому снимок собирается заново
+   в нужном размере и не зависит от окна. */
+
+function exportSize() {
+  const a = ASPECTS[values.format] || 1;
+  return a >= 1
+    ? { w: EXPORT_LONG_SIDE, h: Math.round(EXPORT_LONG_SIDE / a) }
+    : { w: Math.round(EXPORT_LONG_SIDE * a), h: EXPORT_LONG_SIDE };
+}
 
 function exportPNG() {
+  const { w, h } = exportSize();
   const tmp = document.createElement('canvas');
-  tmp.width = Math.round(Sx * dpr);
-  tmp.height = Math.round(Sy * dpr);
+  tmp.width = w; tmp.height = h;
   const g = tmp.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = PAPER;
-  g.fillRect(0, 0, Sx, Sy);
-  g.save();
-  g.beginPath(); g.rect(0, 0, Sx, Sy); g.clip();
-  if (mode === 'walls') {
-    if (wallDirty) renderWallCanvas();
-    g.imageSmoothingEnabled = false;
-    g.drawImage(wallCanvas, 0, 0, Sx, Sy);
-  } else {
-    if (on('showWalls')) {
-      g.save();
-      g.globalAlpha = 0.22;
-      g.imageSmoothingEnabled = false;
-      g.drawImage(wallCanvas, 0, 0, Sx, Sy);
-      g.restore();
-    }
-    if (growth && growth.surface) {
-      growthSurface();
-      g.drawImage(growth.surface, 0, 0, Sx, Sy);
+  g.fillRect(0, 0, w, h);
+  const showW = mode === 'walls' || on('showWalls');
+  if (showW && wallOps.length) {
+    const layer = document.createElement('canvas');
+    layer.width = w; layer.height = h;
+    const lg = layer.getContext('2d');
+    paintOps(lg, w, h, false);
+    g.globalAlpha = mode === 'walls' ? 1 : 0.22;
+    g.drawImage(layer, 0, 0);
+    g.globalAlpha = 1;
+  }
+  if (mode === 'grow' && growth?.segments.length) {
+    const minS = Math.min(w, h);
+    g.strokeStyle = INK;
+    g.lineCap = 'round';
+    for (const seg of growth.segments) {
+      g.lineWidth = Math.max(0.6, seg.width * minS);
+      g.beginPath();
+      g.moveTo(seg.x1 * w, seg.y1 * h);
+      g.lineTo(seg.x2 * w, seg.y2 * h);
+      g.stroke();
     }
   }
-  g.restore();
-  tmp.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `grow-${Date.now()}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
+  tmp.toBlob(blob => download(blob, 'png'));
 }
 
 function exportSVG() {
-  const SCALE = 1000;
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SCALE} ${SCALE}" width="${SCALE}" height="${SCALE}">`;
-  svg += `<rect width="${SCALE}" height="${SCALE}" fill="${PAPER}"/>`;
-  if (on('showWalls') && hasWalls()) {
-    const cell = SCALE / GRID;
-    svg += '<g fill="' + INK + '" opacity="0.22">';
-    for (let j = 0; j < GRID; j += 1) {
-      for (let i = 0; i < GRID; i += 1) {
-        if (walls[j * GRID + i]) {
-          svg += `<rect x="${(i * cell).toFixed(2)}" y="${(j * cell).toFixed(2)}" width="${(cell + 0.5).toFixed(2)}" height="${(cell + 0.5).toFixed(2)}"/>`;
-        }
+  const { w, h } = exportSize();
+  const minS = Math.min(w, h);
+  const showW = mode === 'walls' || on('showWalls');
+  let defs = '';
+  let body = '';
+  if (showW && wallOps.length) {
+    let mask = `<mask id="walls" maskUnits="userSpaceOnUse" x="0" y="0" width="${w}" height="${h}">`;
+    for (const op of wallOps) {
+      if (op.k === 'svg') {
+        mask += `<image href="${op.src}" x="${(op.x * w).toFixed(2)}" y="${(op.y * h).toFixed(2)}"`
+          + ` width="${(op.w * w).toFixed(2)}" height="${(op.h * h).toFixed(2)}"`
+          + ' preserveAspectRatio="none" filter="url(#solid)"/>';
+        continue;
       }
+      const pts = op.pts.length === 1 ? [op.pts[0], op.pts[0]] : op.pts;
+      const d = pts.map(p => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`).join(' ');
+      mask += `<polyline points="${d}" fill="none" stroke="${op.erase ? '#000' : '#fff'}"`
+        + ` stroke-width="${(op.r * 2 * h).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
-    svg += '</g>';
+    mask += '</mask>';
+    defs += '<filter id="solid" x="-10%" y="-10%" width="120%" height="120%">'
+      + '<feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0"/></filter>';
+    defs += mask;
+    body += `<rect width="${w}" height="${h}" fill="${INK}" mask="url(#walls)" opacity="${mode === 'walls' ? 1 : 0.22}"/>`;
   }
-  if (growth && growth.segments.length) {
-    svg += '<g stroke="' + INK + '" stroke-linecap="round">';
+  if (mode === 'grow' && growth?.segments.length) {
+    const chains = new Map();
     for (const seg of growth.segments) {
-      const w = Math.max(0.5, seg.width * SCALE);
-      svg += `<line x1="${(seg.x1 * SCALE).toFixed(2)}" y1="${(seg.y1 * SCALE).toFixed(2)}" x2="${(seg.x2 * SCALE).toFixed(2)}" y2="${(seg.y2 * SCALE).toFixed(2)}" stroke-width="${w.toFixed(3)}"/>`;
+      let chain = chains.get(seg.t);
+      if (!chain) { chain = { width: seg.width, pts: [[seg.x1, seg.y1]] }; chains.set(seg.t, chain); }
+      chain.pts.push([seg.x2, seg.y2]);
     }
-    svg += '</g>';
+    body += `<g fill="none" stroke="${INK}" stroke-linecap="round" stroke-linejoin="round">`;
+    for (const chain of chains.values()) {
+      const d = chain.pts.map(p => `${(p[0] * w).toFixed(1)},${(p[1] * h).toFixed(1)}`).join(' ');
+      body += `<polyline points="${d}" stroke-width="${Math.max(0.6, chain.width * minS).toFixed(2)}"/>`;
+    }
+    body += '</g>';
   }
-  svg += '</svg>';
-  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">`
+    + `<rect width="${w}" height="${h}" fill="${PAPER}"/>`
+    + (defs ? `<defs>${defs}</defs>` : '')
+    + body + '</svg>';
+  download(new Blob([svg], { type: 'image/svg+xml' }), 'svg');
+}
+
+function download(blob, ext) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `grow-${Date.now()}.svg`;
+  a.href = url;
+  a.download = `grow-${Date.now()}.${ext}`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -551,38 +689,40 @@ function exportSVG() {
 
 function track(event) {
   const rect = canvas.getBoundingClientRect();
-  pointer.px = pointer.x; pointer.py = pointer.y;
   pointer.x = (event.clientX - rect.left) / rect.width;
   pointer.y = (event.clientY - rect.top) / rect.height;
 }
 
 function svgHit(x, y) {
   if (!svgOverlay) return false;
-  const { x: sx, y: sy, scale, w, h } = svgOverlay;
-  const dw = w * scale / GRID, dh = h * scale / GRID;
-  return x >= sx && x <= sx + dw && y >= sy && y <= sy + dh;
+  const o = svgOverlay;
+  return x >= o.x && x <= o.x + overlayWidth(o) && y >= o.y && y <= o.y + o.h;
 }
 
 function down(event) {
-  if (pointer.id !== null || paused) return;
+  if (pointer.id !== null || (mode === 'grow' && paused)) return;
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   track(event);
   if (pointer.x < 0 || pointer.x > 1 || pointer.y < 0 || pointer.y > 1) return;
   event.preventDefault();
   pointer.id = event.pointerId; pointer.down = true;
   canvas.setPointerCapture(event.pointerId);
-  if (svgPlacing && svgHit(pointer.x, pointer.y)) {
+  if (svgOverlay) {
+    if (!svgHit(pointer.x, pointer.y)) return;
     svgOverlay.dragging = true;
     svgOverlay.grabDx = pointer.x - svgOverlay.x;
     svgOverlay.grabDy = pointer.y - svgOverlay.y;
     return;
   }
   if (mode === 'walls') {
-    snapshotWalls();
+    pushUndo();
+    hasInteracted = true;
     wallDrawing = true;
-    lastWall = { x: pointer.x, y: pointer.y };
-    paintWall(pointer.x, pointer.y);
-    updateGrowButton();
+    current = { k: 'b', erase: brushErase, r: brushRadius(), pts: [[pointer.x, pointer.y]] };
+    wallOps.push(current);
+    strokeLive([pointer.x, pointer.y], [pointer.x, pointer.y]);
+    gridDirty = true;
+    updateHint();
   } else {
     growth.leading = true;
     feed(pointer.x, pointer.y);
@@ -592,18 +732,22 @@ function down(event) {
 function move(event) {
   if (pointer.id !== null && pointer.id !== event.pointerId) return;
   track(event);
-  if (svgPlacing && svgOverlay && svgOverlay.dragging) {
+  if (svgOverlay && svgOverlay.dragging) {
     svgOverlay.x = clamp(pointer.x - svgOverlay.grabDx, -0.5, 1);
     svgOverlay.y = clamp(pointer.y - svgOverlay.grabDy, -0.5, 1);
     return;
   }
-  if (mode === 'walls' && wallDrawing) {
-    if (lastWall) paintWallLine(lastWall.x, lastWall.y, pointer.x, pointer.y);
-    lastWall = { x: pointer.x, y: pointer.y };
+  if (mode === 'walls' && wallDrawing && current) {
+    const prev = current.pts[current.pts.length - 1];
+    const next = [pointer.x, pointer.y];
+    if (Math.hypot(next[0] - prev[0], next[1] - prev[1]) < 0.0015) return;
+    current.pts.push(next);
+    strokeLive(prev, next);
+    gridDirty = true;
   } else if (mode === 'grow' && pointer.down && growth) {
     if (growth.leading) {
       const trail = growth.trail;
-      if (trail && Math.hypot(pointer.x - trail[0], pointer.y - trail[1]) < TRAIL_STEP) return;
+      if (trail && distOf(trail[0], trail[1], pointer.x, pointer.y) < TRAIL_STEP) return;
       growth.trail = [pointer.x, pointer.y];
       feed(pointer.x, pointer.y);
     }
@@ -615,36 +759,59 @@ function release(event) {
   const id = pointer.id;
   pointer.id = null; pointer.down = false;
   if (svgOverlay) svgOverlay.dragging = false;
-  if (mode === 'walls') { wallDrawing = false; lastWall = null; }
-  else if (growth) { growth.trail = null; growth.leading = false; }
+  if (mode === 'walls') {
+    wallDrawing = false;
+    if (current) { current = null; updateGrowButton(); saveSoon(); }
+  } else if (growth) { growth.trail = null; growth.leading = false; }
   if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
 }
 
 function wheel(event) {
-  if (!svgPlacing || !svgOverlay) return;
+  if (svgOverlay) {
+    event.preventDefault();
+    track(event);
+    scaleSVG(svgOverlay.h * (event.deltaY < 0 ? 1.1 : 1 / 1.1), pointer.x, pointer.y);
+    return;
+  }
+  if (mode !== 'walls') return;
   event.preventDefault();
-  const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-  const { x, y, scale, w, h } = svgOverlay;
-  /* Масштаб вокруг центра указателя. */
-  const cx = pointer.x, cy = pointer.y;
-  const dw = w * scale / GRID, dh = h * scale / GRID;
-  const newScale = clamp(scale * factor, 0.02, 4);
-  const newDw = w * newScale / GRID, newDh = h * newScale / GRID;
-  svgOverlay.x = cx - (cx - x) * (newScale / scale);
-  svgOverlay.y = cy - (cy - y) * (newScale / scale);
-  svgOverlay.scale = newScale;
+  setBrush(num('brush') + (event.deltaY < 0 ? 1 : -1));
 }
+
+function setBrush(size) {
+  const input = document.getElementById('brush-size');
+  values.brush = clamp(Math.round(size), Number(input.min), Number(input.max));
+  input.value = values.brush;
+  document.getElementById('brush-size-label').textContent = `размер · ${values.brush}`;
+  saveSoon();
+}
+
+/* ===== клавиши ===== */
 
 function key(event) {
   const node = event.target;
-  if (node && node.closest && node.closest('input, textarea, select')) return;
-  if (event.key === 'Tab') { event.preventDefault(); togglePanel(); }
-  if (event.code === 'Space' && !(node && node.closest && node.closest('button'))) {
+  if (event.key === 'Escape' && exportMenu.open) {
+    exportMenu.open = false;
+    exportMenu.querySelector('summary').focus();
+    return;
+  }
+  if (event.key === 'Escape' && svgOverlay) { cancelSVG(); return; }
+  if (event.key === 'Escape' && !panel.hidden) { setPanelOpen(false); return; }
+  if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey) && mode === 'walls') {
+    event.preventDefault(); undoWalls(); return;
+  }
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+  if (event.code === 'Space' && !node?.closest('button') && mode === 'grow') {
     event.preventDefault(); togglePause();
   }
-  if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey) && mode === 'walls') { event.preventDefault(); undoWalls(); }
-  if (event.code === 'KeyR' && mode === 'grow') startGrowth();
-  if (event.code === 'KeyC' && mode === 'grow') { values.auto = false; startGrowth(); }
+  if (event.code === 'KeyR' && mode === 'grow') restartGrowth();
+  if (event.code === 'KeyC' && mode === 'grow') {
+    values.auto = false;
+    buildPanel();
+    updateHint();
+    saveSoon();
+  }
 }
 
 /* ===== панель ===== */
@@ -652,14 +819,44 @@ function key(event) {
 const panel = document.getElementById('panel');
 const toggleBtn = document.getElementById('toggle');
 const hintEl = document.getElementById('hint');
+const exportMenu = document.getElementById('export-menu');
 let panelTarget = panel;
 
-function togglePanel() {
-  if (panel.hidden) buildPanel();
-  panel.hidden = !panel.hidden;
-  toggleBtn.hidden = !panel.hidden;
+document.addEventListener('pointerdown', event => {
+  if (!exportMenu.contains(event.target)) exportMenu.open = false;
+});
+
+function setPanelOpen(open) {
+  if (open) buildPanel();
+  panel.hidden = !open;
+  toggleBtn.setAttribute('aria-expanded', String(open));
+  fitCanvas();
+  if (open) {
+    panel.scrollTop = 0;
+    panel.querySelector('button').focus();
+  } else toggleBtn.focus();
 }
-toggleBtn.addEventListener('click', togglePanel);
+
+/* Панель лежит поверх сцены, поэтому холст не пересчитывается, а лишь
+   ужимается показом — рисунок остаётся тем же. */
+function fitCanvas() {
+  if (panel.hidden) {
+    canvas.style.transform = '';
+    return;
+  }
+  const st = sheet.getBoundingClientRect();
+  const pa = panel.getBoundingClientRect();
+  const gutter = 14;
+  const aside = pa.left > st.left + 1;
+  const free = aside
+    ? { w: pa.left - st.left, h: st.height, cx: (st.left + pa.left) / 2, cy: st.top + st.height / 2 }
+    : { w: st.width, h: pa.top - st.top, cx: st.left + st.width / 2, cy: (st.top + pa.top) / 2 };
+  const k = clamp(Math.min((free.w - gutter * 2) / Sx, (free.h - gutter * 2) / Sy), 0.2, 1);
+  const tx = free.cx - (st.left + st.width / 2);
+  const ty = free.cy - (st.top + st.height / 2);
+  canvas.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`;
+}
+toggleBtn.addEventListener('click', () => setPanelOpen(panel.hidden));
 
 function makeRange(key, label, min, max, step) {
   const el = document.createElement('label');
@@ -670,25 +867,27 @@ function makeRange(key, label, min, max, step) {
   const paint = () => { caption.textContent = `${label} · ${values[key]}`; };
   input.addEventListener('input', () => {
     values[key] = Number(input.value);
-    if (key === 'brush') brushSize = Number(input.value);
     paint();
-    if (key === 'gap') startGrowth();
+    saveSoon();
   });
+  if (key === 'gap') input.addEventListener('change', rebuildGrowthMask);
   paint(); el.append(caption, input); panelTarget.append(el);
 }
 
 function makeToggle(key, label) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  const paint = () => { btn.textContent = `${label} · ${values[key] ? 'да' : 'нет'}`; };
-  btn.addEventListener('click', () => { values[key] = !values[key]; paint(); });
+  const paint = () => {
+    btn.textContent = `${label} · ${values[key] ? 'да' : 'нет'}`;
+    btn.setAttribute('aria-pressed', String(values[key]));
+  };
+  btn.addEventListener('click', () => { values[key] = !values[key]; paint(); updateHint(); saveSoon(); });
   paint(); panelTarget.append(btn);
 }
 
-function makePick(key, label, options) {
+function makePick(key, label, options, after) {
   const wrap = document.createElement('div');
   wrap.className = 'pick-row';
-  wrap.dataset.label = label;
   const labelEl = document.createElement('span');
   labelEl.className = 'pick-label';
   labelEl.textContent = label;
@@ -698,10 +897,15 @@ function makePick(key, label, options) {
     const btn = document.createElement('button');
     btn.type = 'button'; btn.textContent = opt;
     btn.className = i === getIdx() ? 'btn-active' : '';
+    btn.setAttribute('aria-pressed', String(i === getIdx()));
     btn.addEventListener('click', () => {
       values[key] = typeof values[key] === 'number' ? i : opt;
-      wrap.querySelectorAll('button').forEach((b, j) => b.className = j === i ? 'btn-active' : '');
-      if (key === 'format') resize();
+      wrap.querySelectorAll('button').forEach((b, j) => {
+        b.className = j === i ? 'btn-active' : '';
+        b.setAttribute('aria-pressed', String(j === i));
+      });
+      if (after) after();
+      saveSoon();
     });
     wrap.append(btn);
   });
@@ -715,26 +919,28 @@ function makeButton(text, action) {
   panelTarget.append(btn);
 }
 
-function makeToolButton(label, active, action) {
-  const btn = document.createElement('button');
-  btn.type = 'button'; btn.textContent = label;
-  if (active) btn.className = 'btn-active';
-  btn.addEventListener('click', action);
-  return btn;
+function makeNote(text) {
+  const note = document.createElement('p');
+  note.className = 'panel-note';
+  note.textContent = text;
+  panelTarget.append(note);
 }
 
-function hr() { const h = document.createElement('hr'); panel.append(h); }
+function hr() { panel.append(document.createElement('hr')); }
 
 function makeSection(title, collapsed = false) {
   const wrap = document.createElement('div');
   wrap.className = 'section' + (collapsed ? ' collapsed' : '');
-  const head = document.createElement('div');
+  const head = document.createElement('button');
+  head.type = 'button';
+  head.setAttribute('aria-expanded', String(!collapsed));
   head.className = 'section-head';
   head.textContent = title;
   const body = document.createElement('div');
   body.className = 'section-body';
   head.addEventListener('click', () => {
     wrap.classList.toggle('collapsed');
+    head.setAttribute('aria-expanded', String(!wrap.classList.contains('collapsed')));
   });
   wrap.append(head, body);
   panel.append(wrap);
@@ -744,147 +950,283 @@ function makeSection(title, collapsed = false) {
 
 function endSection() { panelTarget = panel; }
 
+function applyPreset(name) {
+  Object.assign(values, PRESETS[name]);
+  rebuildGrowthMask();
+  buildPanel();
+  saveSoon();
+}
+
+function changeFormat() {
+  setGrid();
+  resize();
+  rebuildWallCanvas();
+  updateGrowButton();
+}
+
 function buildPanel() {
   panel.innerHTML = '';
   panelTarget = panel;
-  if (svgPlacing) {
-    makeButton('применить SVG', applySVG);
-    makeButton('отменить SVG', cancelSVG);
-    return;
-  }
+  const heading = document.createElement('div');
+  heading.className = 'panel-head';
+  const title = document.createElement('h2');
+  title.textContent = mode === 'walls' ? 'стены' : 'характер роста';
+  const close = document.createElement('button');
+  close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Закрыть настройки');
+  close.addEventListener('click', () => setPanelOpen(false));
+  heading.append(title, close); panel.append(heading);
+
   if (mode === 'walls') {
-    /* кисть / ластик — две кнопки в ряд */
-    makeRange('brush', 'кисть', 2, 20, 1);
-    const toolRow = document.createElement('div');
-    toolRow.className = 'tool-row';
-    const brushBtn = makeToolButton('кисть', !brushErase, () => { brushErase = false; buildPanel(); });
-    const eraseBtn = makeToolButton('ластик', brushErase, () => { brushErase = true; buildPanel(); });
-    toolRow.append(brushBtn, eraseBtn);
-    panelTarget.append(toolRow);
+    makePick('format', 'формат холста', ['квадрат', 'широко', 'высоко', 'лист'], changeFormat);
     hr();
-    makeButton('отменить ⌘Z', undoWalls);
-    makeButton('очистить стены', () => { snapshotWalls(); walls.fill(0); wallDirty = true; updateGrowButton(); });
-    hr();
-    makePick('format', 'формат', ['квадрат', 'широко', 'высоко', 'лист']);
-    const svgLabel = document.createElement('button');
-    svgLabel.type = 'button'; svgLabel.textContent = 'загрузить SVG';
-    svgLabel.addEventListener('click', () => document.getElementById('svg-file').click());
-    panelTarget.append(svgLabel);
+    makeButton('очистить стены', clearWalls);
+    makeNote('Размер кисти — в строке под холстом или колесом мыши. Очистку и штрихи можно отменить: ⌘/Ctrl+Z.');
   } else {
-    makeToggle('auto', 'автономно');
-    makeToggle('showWalls', 'перегородки');
-    makeSection('рост');
+    const row = document.createElement('div');
+    row.className = 'pick-row';
+    const label = document.createElement('span');
+    label.className = 'pick-label';
+    label.textContent = 'пресет';
+    row.append(label);
+    for (const name of Object.keys(PRESETS)) {
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.textContent = name;
+      btn.addEventListener('click', () => applyPreset(name));
+      row.append(btn);
+    }
+    panel.append(row);
+    hr();
+    makeToggle('auto', 'автоматический засев');
+    makeToggle('showWalls', 'показывать стены');
+    hr();
     makeRange('speed', 'скорость', 1, 16, 1);
-    makeRange('mass', 'масса', 1, 8, 1);
+    makeRange('mass', 'толщина ветвей', 1, 8, 1);
     makeRange('branch', 'ветвление', 0, 8, 1);
-    makeRange('seeds', 'очагов', 1, 14, 1);
-    makeRange('crowd', 'поголовье', 0, 30, 1);
+    makeSection('дополнительно', true);
+    makeRange('seeds', 'побегов за касание', 1, 14, 1);
+    makeRange('crowd', 'плотность побегов', 0, 30, 1);
     makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
-    endSection();
-    makeSection('форма', true);
     makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
-    makeRange('step', 'звено', 0.003, 0.03, 0.001);
+    makeRange('step', 'длина шага', 0.003, 0.03, 0.001);
     makeRange('wander', 'извив', 0.2, 2.5, 0.1);
     makeRange('straight', 'прямизна', 0, 1, 0.02);
-    makeRange('pull', 'тяга к еде', 0, 2, 0.05);
-    makeRange('life', 'жизнь', 0.5, 6, 0.5);
+    makeRange('pull', 'тяга к касанию', 0, 2, 0.05);
+    makeRange('life', 'жизнь побега', 0.5, 6, 0.5);
+    makeButton('сбросить параметры', () => {
+      for (const k of GROWTH_KEYS) values[k] = DEFAULTS[k];
+      rebuildGrowthMask();
+      buildPanel();
+      saveSoon();
+    });
     endSection();
-    makeSection('управление');
-    makeButton('заново (r)', () => { values.auto = true; startGrowth(); });
-    makeButton('вручную (c)', () => { values.auto = false; startGrowth(); });
-    makeButton('пауза (пробел)', togglePause);
-    endSection();
-    makeSection('сохранить');
-    const saveRow = document.createElement('div');
-    saveRow.className = 'tool-row';
-    const pngBtn = document.createElement('button');
-    pngBtn.type = 'button'; pngBtn.textContent = 'PNG';
-    pngBtn.addEventListener('click', exportPNG);
-    const svgBtn = document.createElement('button');
-    svgBtn.type = 'button'; svgBtn.textContent = 'SVG';
-    svgBtn.addEventListener('click', exportSVG);
-    saveRow.append(pngBtn, svgBtn);
-    panelTarget.append(saveRow);
-    endSection();
+    makeNote('Параметры влияют на дальнейший рост. Уже нарисованные ветви сохраняются.');
+  }
+
+  makeSection('клавиши', true);
+  const keys = document.createElement('div');
+  keys.className = 'keys';
+  keys.innerHTML = '<b>пробел</b> пауза<br><b>R</b> заново<br><b>C</b> выключить засев<br><b>⌘/Ctrl+Z</b> отменить<br><b>Esc</b> закрыть';
+  panelTarget.append(keys);
+  endSection();
+}
+
+/* ===== состояние интерфейса ===== */
+
+function updateControls() {
+  const placing = !!svgOverlay;
+  document.getElementById('wall-tools').hidden = placing || mode !== 'walls';
+  document.getElementById('grow-tools').hidden = placing || mode !== 'grow';
+  document.getElementById('svg-tools').hidden = !placing;
+  const pause = document.getElementById('pause');
+  pause.textContent = paused ? 'продолжить' : 'пауза';
+  pause.setAttribute('aria-pressed', String(paused));
+  document.getElementById('restore').hidden = !previousGrowth;
+  const note = document.getElementById('note');
+  note.textContent = placing ? 'размещение SVG' : mode === 'walls' ? 'рисование' : paused ? 'на паузе' : 'растёт';
+  for (const [id, active] of [['brush', !brushErase], ['eraser', brushErase]]) {
+    const button = document.getElementById(id);
+    button.classList.toggle('btn-active', active);
+    button.setAttribute('aria-pressed', String(active));
   }
 }
 
-/* ===== переключение режимов ===== */
-
 function setMode(newMode) {
-  if (newMode === 'grow' && !hasWalls() && !svgPlacing) {
-    hintEl.textContent = 'сначала нарисуйте стены или загрузите SVG';
+  if (svgOverlay && newMode === 'grow') {
+    showMessage('Сначала примените SVG или отмените его размещение.');
     return;
   }
-  if (newMode === 'grow' && svgPlacing) cancelSVG();
+  if (newMode === mode) return;
+  ensureGrid();
+  if (newMode === 'grow' && !wallsPresent && !growth) return;
+  release();
   mode = newMode;
   for (const btn of document.querySelectorAll('#modes button')) {
     btn.classList.toggle('active', btn.dataset.mode === newMode);
+    btn.setAttribute('aria-pressed', String(btn.dataset.mode === newMode));
   }
-  if (newMode === 'grow') {
+  if (newMode === 'grow' && !growth) {
     values.showWalls = true;
     startGrowth();
   }
-  pointer.down = false; pointer.id = null;
-  wallDrawing = false; lastWall = null;
-  buildPanel();
+  debt = 0;
+  if (!panel.hidden) buildPanel();
+  updateControls();
   updateHint();
 }
 
 function updateHint() {
-  if (svgPlacing) hintEl.textContent = 'тяните, чтобы переместить · колесо — масштаб · «применить SVG»';
-  else if (mode === 'walls') hintEl.textContent = 'нарисуйте стены — потом «рост» обрастёт вокруг них';
-  else hintEl.textContent = 'коснитесь — питание, рост идёт следом';
+  if (svgOverlay) {
+    hintEl.hidden = true;
+    return;
+  }
+  if (mode === 'walls' && !hasInteracted) {
+    hintEl.hidden = false;
+    hintEl.textContent = 'нарисуйте стены — вокруг них пойдёт рост';
+    return;
+  }
+  ensureGrid();
+  if (mode === 'walls' && wallsPresent && !growth) {
+    hintEl.hidden = false;
+    hintEl.textContent = 'готово — включите «рост» в шапке';
+    return;
+  }
+  hintEl.hidden = true;
 }
 
 function updateGrowButton() {
+  ensureGrid();
   const growBtn = document.querySelector('#modes button[data-mode="grow"]');
-  if (!growBtn) return;
-  if (hasWalls() || svgPlacing) growBtn.classList.remove('btn-disabled');
-  else growBtn.classList.add('btn-disabled');
+  const ready = wallsPresent || !!growth;
+  growBtn.disabled = !ready;
+  growBtn.title = ready ? 'Рост' : 'Сначала нарисуйте стены';
+  document.getElementById('undo').disabled = !undoStack.length;
+  updateHint();
 }
 
-document.querySelectorAll('#modes button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.classList.contains('btn-disabled')) return;
-    setMode(btn.dataset.mode);
-  });
-});
+/* ===== сохранение ===== */
 
-document.getElementById('svg-file').addEventListener('change', (e) => {
+let saveTimer = 0;
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 600);
+}
+
+function save() {
+  try {
+    const ops = wallOps.map(op => op.k === 'svg'
+      ? { k: 'svg', src: op.src, x: op.x, y: op.y, w: op.w, h: op.h }
+      : { k: 'b', erase: op.erase, r: Number(op.r.toFixed(5)), pts: op.pts.map(p => [Number(p[0].toFixed(4)), Number(p[1].toFixed(4))]) });
+    localStorage.setItem(STORE_KEY, JSON.stringify({ values, ops }));
+  } catch {
+    /* переполнение хранилища — рисунок просто не переживёт перезагрузку */
+  }
+}
+
+function load() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch { saved = null; }
+  if (!saved) return;
+  for (const k of Object.keys(DEFAULTS)) {
+    if (saved.values && k in saved.values) values[k] = saved.values[k];
+  }
+  setGrid();
+  wallOps = (saved.ops || []).filter(op => op.k === 'svg' ? op.src : op.pts?.length);
+  if (wallOps.length) hasInteracted = true;
+  gridDirty = true;
+  let pending = 0;
+  for (const op of wallOps) {
+    if (op.k !== 'svg') continue;
+    pending += 1;
+    const img = new Image();
+    img.onload = img.onerror = () => {
+      op.img = img.complete && img.naturalWidth ? img : null;
+      pending -= 1;
+      gridDirty = true;
+      if (pending === 0) { rebuildWallCanvas(); updateGrowButton(); }
+    };
+    img.src = op.src;
+  }
+  if (!pending) { rebuildWallCanvas(); updateGrowButton(); }
+}
+
+/* ===== события ===== */
+
+document.querySelectorAll('#modes button').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+document.getElementById('brush').addEventListener('click', () => { brushErase = false; updateControls(); });
+document.getElementById('eraser').addEventListener('click', () => { brushErase = true; updateControls(); });
+document.getElementById('brush-size').addEventListener('input', e => setBrush(e.target.value));
+document.getElementById('undo').addEventListener('click', undoWalls);
+document.getElementById('import').addEventListener('click', () => document.getElementById('svg-file').click());
+document.getElementById('pause').addEventListener('click', togglePause);
+document.getElementById('restart').addEventListener('click', restartGrowth);
+document.getElementById('restore').addEventListener('click', restoreGrowth);
+document.getElementById('svg-apply').addEventListener('click', applySVG);
+document.getElementById('svg-cancel').addEventListener('click', cancelSVG);
+document.getElementById('svg-scale').addEventListener('input', e => {
+  const o = svgOverlay;
+  if (!o) return;
+  scaleSVG(o.baseH * Number(e.target.value) / 100, o.x + overlayWidth(o) / 2, o.y + o.h / 2);
+});
+document.getElementById('export-png').addEventListener('click', () => {
+  exportPNG();
+  exportMenu.open = false;
+  exportMenu.querySelector('summary').focus();
+});
+document.getElementById('export-svg').addEventListener('click', () => {
+  exportSVG();
+  exportMenu.open = false;
+  exportMenu.querySelector('summary').focus();
+});
+document.getElementById('svg-file').addEventListener('change', e => {
   const file = e.target.files[0];
   if (file) loadSVG(file);
   e.target.value = '';
 });
 
-/* Drag-and-drop SVG на холст. */
-canvas.addEventListener('dragover', (e) => { e.preventDefault(); });
-canvas.addEventListener('drop', (e) => {
+canvas.addEventListener('dragover', e => e.preventDefault());
+canvas.addEventListener('drop', e => {
   e.preventDefault();
   const file = e.dataTransfer.files[0];
-  if (file && (file.type === 'image/svg+xml' || file.name.endsWith('.svg'))) {
-    loadSVG(file);
-  }
+  if (file && (file.type === 'image/svg+xml' || file.name.endsWith('.svg'))) loadSVG(file);
 });
-
 canvas.addEventListener('wheel', wheel, { passive: false });
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('lostpointercapture', release);
+canvas.addEventListener('pointerleave', () => { if (!pointer.down) { pointer.x = -1; pointer.y = -1; } });
+document.addEventListener('keydown', key);
+window.addEventListener('blur', () => release());
 
-function togglePause() { paused = !paused; debt = 0; }
+function togglePause() {
+  if (mode !== 'grow') return;
+  release();
+  paused = !paused;
+  debt = 0;
+  updateControls();
+}
 
-/* ===== resize ===== */
+/* ===== размер ===== */
+
+const GUTTER = 14;
 
 function resize() {
-  const main = canvas.parentElement;
-  W = main.clientWidth; H = main.clientHeight;
+  const gutter = sheet.clientWidth < 520 ? 8 : GUTTER;
+  const W = Math.max(40, sheet.clientWidth - gutter * 2);
+  const H = Math.max(40, sheet.clientHeight - gutter * 2);
   const a = ASPECTS[values.format] || 1;
   if (W / H > a) { Sy = H; Sx = Sy * a; }
   else { Sx = W; Sy = Sx / a; }
-  ox = (W - Sx) / 2; oy = (H - Sy) / 2;
   dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(Sx * dpr);
   canvas.height = Math.round(Sy * dpr);
   canvas.style.width = Sx + 'px';
   canvas.style.height = Sy + 'px';
+  rebuildWallCanvas();
+  fitCanvas();
 }
 
 /* ===== главный цикл ===== */
@@ -906,24 +1248,17 @@ function frame(now) {
   if (mode === 'walls') wallDraw();
   else growDraw();
   ctx.restore();
-  frameId = requestAnimationFrame(frame);
+  requestAnimationFrame(frame);
 }
 
 /* ===== инициализация ===== */
 
-const observer = new ResizeObserver(resize);
-observer.observe(canvas.parentElement);
+setGrid();
+load();
+setBrush(values.brush);
+new ResizeObserver(resize).observe(sheet);
 resize();
 buildPanel();
-updateHint();
+updateControls();
 updateGrowButton();
-
-canvas.addEventListener('pointerdown', down);
-canvas.addEventListener('pointermove', move);
-canvas.addEventListener('pointerup', release);
-canvas.addEventListener('pointercancel', release);
-canvas.addEventListener('lostpointercapture', release);
-document.addEventListener('keydown', key);
-window.addEventListener('blur', () => release());
-
-frameId = requestAnimationFrame(frame);
+requestAnimationFrame(frame);
