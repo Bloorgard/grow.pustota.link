@@ -107,7 +107,9 @@ function applyField(nextShape, nextProportion) {
 let wallOps = [];
 let undoStack = [];
 let current = null;
-let brushErase = false;
+let wallTool = 'brush';
+let panFrom = null;
+const brushErase = () => wallTool === 'eraser';
 const wallCanvas = document.createElement('canvas');
 
 const brushRadius = () => num('brush') / GRID_BASE;
@@ -162,7 +164,7 @@ function rebuildWallCanvas() {
 /* Досовываем только последний отрезок — перерисовывать всё каждый кадр незачем. */
 function strokeLive(p0, p1) {
   const g = wallCanvas.getContext('2d');
-  drawOp(g, wallCanvas.width, wallCanvas.height, { k: 'b', erase: brushErase, r: brushRadius(), pts: [p0, p1] }, false);
+  drawOp(g, wallCanvas.width, wallCanvas.height, { k: 'b', erase: brushErase(), r: brushRadius(), pts: [p0, p1] }, false);
 }
 
 /* Растеризация штрихов в сетку столкновений. */
@@ -190,6 +192,55 @@ function ensureGrid() {
   gridDirty = false;
 }
 
+/* ===== правка композиции: ладошка и масштаб рисунка =====
+   Двигаем само содержимое — стены и выращенное вместе, — а не «камеру»:
+   граница холста остаётся на месте, потому что это граница роста, а не
+   рамка вокруг рисунка. Овал побеги обходят там же, где и обходили. */
+
+function hasDrawing() {
+  return wallOps.length > 0 || !!growth?.segments.length || !!previousGrowth?.segments.length;
+}
+
+/* Сначала масштаб от центра листа, потом сдвиг. */
+function composeDrawing({ dx = 0, dy = 0, k = 1 }) {
+  if (dx === 0 && dy === 0 && k === 1) return;
+  const mapX = x => 0.5 + (x - 0.5) * k + dx;
+  const mapY = y => 0.5 + (y - 0.5) * k + dy;
+  for (const op of wallOps) {
+    if (op.k === 'svg') {
+      op.x = mapX(op.x); op.y = mapY(op.y);
+      op.w *= k; op.h *= k;
+      continue;
+    }
+    for (const pt of op.pts) { pt[0] = mapX(pt[0]); pt[1] = mapY(pt[1]); }
+    op.r *= k;
+  }
+  for (const g of [growth, previousGrowth]) {
+    if (!g) continue;
+    for (const seg of g.segments) {
+      seg.x1 = mapX(seg.x1); seg.y1 = mapY(seg.y1);
+      seg.x2 = mapX(seg.x2); seg.y2 = mapY(seg.y2);
+      seg.width *= k;
+    }
+    for (const tip of g.tips) { tip.x = mapX(tip.x); tip.y = mapY(tip.y); tip.width *= k; }
+    for (const food of g.food) { food.x = mapX(food.x); food.y = mapY(food.y); }
+    g.surface = null;
+    rebuildMask(g);
+  }
+  gridDirty = true;
+  rebuildWallCanvas();
+}
+
+const inverseOf = ({ dx = 0, dy = 0, k = 1 }) => ({ dx: -dx / k, dy: -dy / k, k: 1 / k });
+
+/* Отмена композиции — не снимок массива, а обратное преобразование:
+   снимок не вернул бы выращенное, оно в undoStack не хранится вовсе. */
+function pushXformUndo(applied) {
+  undoStack.push({ xform: inverseOf(applied) });
+  if (undoStack.length > 80) undoStack.shift();
+  updateControls();
+}
+
 function pushUndo() {
   undoStack.push(wallOps.slice());
   if (undoStack.length > 80) undoStack.shift();
@@ -198,7 +249,9 @@ function pushUndo() {
 
 function undoWalls() {
   if (!undoStack.length) return;
-  wallOps = undoStack.pop();
+  const top = undoStack.pop();
+  if (top.xform) composeDrawing(top.xform);
+  else wallOps = top;
   updateControls();
   gridDirty = true;
   rebuildWallCanvas();
@@ -584,9 +637,9 @@ function drawSVGOverlay() {
 function wallDraw() {
   ctx.drawImage(wallCanvas, 0, 0, Sx, Sy);
   if (svgOverlay) drawSVGOverlay();
-  if (pointer.x >= 0 && pointer.x <= 1 && pointer.y >= 0 && pointer.y <= 1 && !svgOverlay) {
+  if (wallTool !== 'hand' && pointer.x >= 0 && pointer.x <= 1 && pointer.y >= 0 && pointer.y <= 1 && !svgOverlay) {
     const Smin = Math.min(Sx, Sy);
-    ctx.strokeStyle = brushErase ? RED : MUTED;
+    ctx.strokeStyle = brushErase() ? RED : MUTED;
     ctx.lineWidth = Math.max(1, Smin * 0.002);
     ctx.beginPath();
     ctx.ellipse(pointer.x * Sx, pointer.y * Sy, brushRadius() * Sy, brushRadius() * Sy, 0, 0, TAU);
@@ -755,11 +808,15 @@ function down(event) {
     svgOverlay.grabDy = pointer.y - svgOverlay.y;
     return;
   }
+  if (mode === 'walls' && wallTool === 'hand') {
+    panFrom = { x: pointer.x, y: pointer.y, dx: 0, dy: 0 };
+    return;
+  }
   if (mode === 'walls') {
     pushUndo();
     hasInteracted = true;
     wallDrawing = true;
-    current = { k: 'b', erase: brushErase, r: brushRadius(), pts: [[pointer.x, pointer.y]] };
+    current = { k: 'b', erase: brushErase(), r: brushRadius(), pts: [[pointer.x, pointer.y]] };
     wallOps.push(current);
     strokeLive([pointer.x, pointer.y], [pointer.x, pointer.y]);
     gridDirty = true;
@@ -777,6 +834,13 @@ function move(event) {
   if (svgOverlay && svgOverlay.dragging) {
     svgOverlay.x = clamp(pointer.x - svgOverlay.grabDx, -0.5, 1);
     svgOverlay.y = clamp(pointer.y - svgOverlay.grabDy, -0.5, 1);
+    return;
+  }
+  if (panFrom) {
+    const dx = pointer.x - panFrom.x, dy = pointer.y - panFrom.y;
+    panFrom.x = pointer.x; panFrom.y = pointer.y;
+    panFrom.dx += dx; panFrom.dy += dy;
+    composeDrawing({ dx, dy });
     return;
   }
   if (mode === 'walls' && wallDrawing && current) {
@@ -801,6 +865,15 @@ function release(event) {
   const id = pointer.id;
   pointer.id = null; pointer.down = false;
   if (svgOverlay) svgOverlay.dragging = false;
+  if (panFrom) {
+    const moved = panFrom;
+    panFrom = null;
+    if (moved.dx || moved.dy) {
+      pushXformUndo({ dx: moved.dx, dy: moved.dy });
+      updateGrowButton();
+      saveSoon();
+    }
+  }
   if (mode === 'walls') {
     wallDrawing = false;
     if (current) { current = null; updateGrowButton(); saveSoon(); }
@@ -817,6 +890,14 @@ function wheel(event) {
   }
   if (mode !== 'walls') return;
   event.preventDefault();
+  if (wallTool === 'hand') {
+    scaleDrawing(clamp(scalePct * (event.deltaY < 0 ? 1.04 : 1 / 1.04), 50, 200));
+    syncScaleSlider();
+    /* Колесо крутят сериями — ждём паузы, чтобы серия стала одним шагом отмены. */
+    clearTimeout(scaleCommit);
+    scaleCommit = setTimeout(commitScale, 500);
+    return;
+  }
   setBrush(num('brush') + (event.deltaY < 0 ? 1 : -1));
 }
 
@@ -837,6 +918,44 @@ function syncBrushSlider() {
     f.querySelector('input').value = num('brush');
     const span = f.querySelector('span');
     span.textContent = span.textContent.replace(/·.*/, `· ${num('brush')}`);
+  }
+}
+
+/* Ползунок масштаба живёт от 100%: пока тянешь — предпросмотр, на отпускании
+   изменение уже запечено в координаты, ползунок встаёт обратно в центр и весь
+   жест ложится в один шаг отмены. Так масштабировать можно многократно. */
+let scaleAcc = 1;
+let scalePct = 100;
+let scaleCommit = 0;
+
+function scaleDrawing(pct) {
+  const k = pct / scalePct;
+  scalePct = pct;
+  if (!hasDrawing() || k === 1) return;
+  composeDrawing({ k });
+  scaleAcc *= k;
+  updateGrowButton();
+}
+
+function commitScale() {
+  clearTimeout(scaleCommit);
+  scaleCommit = 0;
+  const applied = scaleAcc;
+  scaleAcc = 1;
+  scalePct = 100;
+  syncScaleSlider();
+  if (applied === 1) return;
+  pushXformUndo({ k: applied });
+  saveSoon();
+}
+
+function syncScaleSlider() {
+  for (const root of [document.getElementById('colIn'), document.getElementById('msheet')]) {
+    const f = root?.querySelector('.field[data-key="drawscale"]');
+    if (!f) continue;
+    f.querySelector('input').value = scalePct;
+    const span = f.querySelector('span');
+    span.textContent = span.textContent.replace(/·.*/, `· ${Math.round(scalePct)}%`);
   }
 }
 
@@ -903,7 +1022,7 @@ let panelOpen = true;
 
 function uiState() {
   return {
-    mode, tool: brushErase ? 'eraser' : 'brush', railWide, panelOpen,
+    mode, tool: wallTool, railWide, panelOpen,
     playing: !paused, auto: on('auto'), seeWalls: on('showWalls'),
     speed: num('speed'), canUndo: undoStack.length > 0, canGrow: wallsPresent || !!growth,
     placingSVG: !!svgOverlay, growthState: growthState(),
@@ -961,7 +1080,7 @@ document.addEventListener('pointerdown', e => {
 });
 
 const actions = {
-  setMode, setTool: t => { brushErase = t === 'eraser'; updateControls(); },
+  setMode, setTool: t => { wallTool = t; updateControls(); },
   undo: undoWalls, importSVG: () => document.getElementById('svg-file').click(),
   clearWalls, applySVG, cancelSVG, togglePause, restart: restartGrowth,
   setSpeed: v => { values.speed = v; updateControls(); saveSoon(); },
@@ -989,6 +1108,8 @@ const actions = {
   setProportion: p => { applyField(shape, p); values.proportion = proportion; resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(); saveSoon(); },
   applyPreset: name => { Object.assign(values, PRESETS[name]); rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
   resetGrowth: () => { for (const k of GROWTH_KEYS) values[k] = DEFAULTS[k]; rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
+  setDrawScale: scaleDrawing,
+  commitDrawScale: commitScale,
   setSVGScale: pct => {
     const o = svgOverlay;
     if (!o) return;
@@ -1012,6 +1133,7 @@ function updateControls(force = false) {
                s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls, narrow].join('|');
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;
+  canvas.classList.toggle('hand', mode === 'walls' && wallTool === 'hand' && !svgOverlay);
   buildRail(document.getElementById('rail'), s, actions);
   document.getElementById('col').className = 'col' + (panelOpen ? ' open' : '');
   buildSettings(document.getElementById('colIn'), mode, values, actions, svgOverlay);

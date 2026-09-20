@@ -44,6 +44,7 @@ export function buildRail(root, s, a) {
     root.append(caption('инструмент'));
     root.append(button('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') }));
     root.append(button('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') }));
+    root.append(button('hand', 'двигать', { on: s.tool === 'hand', click: () => a.setTool('hand') }));
     root.append(rule());
     root.append(button('undo', 'отменить', { ghost: true, key: '⌘Z', disabled: !s.canUndo, click: a.undo }));
     root.append(button('svg', 'вставить картинку', { ghost: true, click: a.importSVG }));
@@ -105,6 +106,7 @@ export function buildBar(root, s, a) {
   } else if (s.mode === 'walls') {
     add('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') });
     add('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') });
+    add('hand', 'двигать', { on: s.tool === 'hand', click: () => a.setTool('hand') });
     add('undo', 'отменить', { ghost: true, disabled: !s.canUndo, click: a.undo });
   } else {
     const done = s.growthState === 'done';
@@ -245,6 +247,21 @@ export function buildSettings(root, mode, values, a, svg) {
       pCap.textContent = `пропорция · ${ratioLabel()}`;
     });
     root.append(p);
+
+    root.insertAdjacentHTML('beforeend', '<h3>рисунок</h3>');
+    const sc = document.createElement('label');
+    sc.className = 'field';
+    sc.dataset.key = 'drawscale';
+    sc.innerHTML = '<span>масштаб · 100%</span>'
+      + '<input type="range" min="50" max="200" step="1" value="100">';
+    const scCap = sc.querySelector('span'), scInput = sc.querySelector('input');
+    scInput.addEventListener('input', e => {
+      a.setDrawScale(Number(e.target.value));
+      scCap.textContent = `масштаб · ${e.target.value}%`;
+    });
+    /* Отпустил — изменение запечено, ползунок возвращается в 100%. */
+    scInput.addEventListener('change', a.commitDrawScale);
+    root.append(sc);
     return;
   }
 
