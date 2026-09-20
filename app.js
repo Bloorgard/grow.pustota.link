@@ -2,7 +2,12 @@
    Механика роста из буквы Ю (alphabet.pustota.link), режим «обрастание».
    Стены хранятся как векторные штрихи: сетка нужна только для столкновений. */
 
-const GRID_BASE = 420;
+import {
+  GRID_BASE, EDGE, AR, GX, GY, shape, proportion,
+  setField, aspect, ratioLabel, at, inBounds, clipField,
+  dxOf, dyOf, angleTo, distOf,
+} from './field.js';
+
 const INK = '#f1ede5';
 const PAPER = '#161616';
 const RED = '#e0210f';
@@ -15,9 +20,7 @@ const FOOD_LIFE = 17;
 const TRAIL_STEP = 0.06;
 const MAX_TIPS = 520;
 const MAX_SEGMENTS = 160000;
-const EDGE = 0.035;
 const EXPORT_LONG_SIDE = 2048;
-const ASPECTS = { 'квадрат': 1, 'широко': 4 / 3, 'высоко': 3 / 4, 'лист': 5 / 4 };
 const STORE_KEY = 'grow.pustota.v1';
 
 const canvas = document.getElementById('canvas');
@@ -36,7 +39,7 @@ const DEFAULTS = {
   speed: 8, mass: 5, branch: 5, seeds: 7, crowd: 12,
   sow: 1, gap: 0.007, step: 0.009,
   wander: 1, straight: 0.14, pull: 0.55, life: 3,
-  format: 'квадрат', brush: 6,
+  shape: 'rect', proportion: 0, brush: 6,
 };
 const GROWTH_KEYS = ['speed', 'mass', 'branch', 'seeds', 'crowd', 'sow', 'gap', 'step', 'wander', 'straight', 'pull', 'life'];
 const PRESETS = {
@@ -54,35 +57,14 @@ const on = key => !!values[key];
    Пропорции сетки следуют формату холста, поэтому её ячейки квадратные
    на экране, и рост не растягивается на неквадратных листах. */
 
-let AR = 1;
-let GX = GRID_BASE, GY = GRID_BASE;
 let walls = new Uint8Array(GX * GY);
 let wallCells = [];
 let wallsPresent = false;
 let gridDirty = true;
 const gridCanvas = document.createElement('canvas');
 
-/* Длины задаются в долях высоты холста; по горизонтали делим на пропорцию. */
-const dxOf = (a, len) => Math.cos(a) * len / AR;
-const dyOf = (a, len) => Math.sin(a) * len;
-const angleTo = (x0, y0, x1, y1) => Math.atan2(y1 - y0, (x1 - x0) * AR);
-const distOf = (x0, y0, x1, y1) => Math.hypot((x1 - x0) * AR, y1 - y0);
-
-function at(x, y) {
-  const ix = Math.floor(x * GX);
-  const iy = Math.floor(y * GY);
-  return ix < 0 || iy < 0 || ix >= GX || iy >= GY ? -1 : iy * GX + ix;
-}
-
-function inBounds(x, y) {
-  const mx = EDGE / AR;
-  return x > mx && x < 1 - mx && y > EDGE && y < 1 - EDGE;
-}
-
-function setGrid() {
-  AR = ASPECTS[values.format] || 1;
-  GX = Math.max(1, Math.round(GRID_BASE * AR));
-  GY = GRID_BASE;
+function applyField(nextShape, nextProportion) {
+  setField(nextShape, nextProportion);
   walls = new Uint8Array(GX * GY);
   gridDirty = true;
   if (growth) {
@@ -591,7 +573,7 @@ function growDraw() {
    в нужном размере и не зависит от окна. */
 
 function exportSize() {
-  const a = ASPECTS[values.format] || 1;
+  const a = aspect();
   return a >= 1
     ? { w: EXPORT_LONG_SIDE, h: Math.round(EXPORT_LONG_SIDE / a) }
     : { w: Math.round(EXPORT_LONG_SIDE * a), h: EXPORT_LONG_SIDE };
@@ -872,6 +854,7 @@ function makeRange(key, label, min, max, step) {
   });
   if (key === 'gap') input.addEventListener('change', rebuildGrowthMask);
   paint(); el.append(caption, input); panelTarget.append(el);
+  return input;
 }
 
 function makeToggle(key, label) {
@@ -957,13 +940,6 @@ function applyPreset(name) {
   saveSoon();
 }
 
-function changeFormat() {
-  setGrid();
-  resize();
-  rebuildWallCanvas();
-  updateGrowButton();
-}
-
 function buildPanel() {
   panel.innerHTML = '';
   panelTarget = panel;
@@ -977,7 +953,15 @@ function buildPanel() {
   heading.append(title, close); panel.append(heading);
 
   if (mode === 'walls') {
-    makePick('format', 'формат холста', ['квадрат', 'широко', 'высоко', 'лист'], changeFormat);
+    makePick('shape', 'форма холста', ['rect', 'oval'], () => {
+      applyField(values.shape, values.proportion);
+      resize(); rebuildWallCanvas(); updateGrowButton();
+    });
+    const proportionInput = makeRange('proportion', 'пропорция', -1, 1, 0.05);
+    proportionInput.addEventListener('change', () => {
+      applyField(values.shape, values.proportion);
+      resize(); rebuildWallCanvas(); updateGrowButton();
+    });
     hr();
     makeButton('очистить стены', clearWalls);
     makeNote('Размер кисти — в строке под холстом или колесом мыши. Очистку и штрихи можно отменить: ⌘/Ctrl+Z.');
@@ -1126,10 +1110,17 @@ function load() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch { saved = null; }
   if (!saved) return;
+  /* Разовый перенос: именованные форматы превратились в форму и пропорцию. */
+  const OLD_FORMATS = { 'квадрат': 0, 'широко': 0.42, 'высоко': -0.42, 'лист': 0.32 };
+  if (saved.values && typeof saved.values.format === 'string') {
+    saved.values.proportion = OLD_FORMATS[saved.values.format] ?? 0;
+    saved.values.shape = 'rect';
+    delete saved.values.format;
+  }
   for (const k of Object.keys(DEFAULTS)) {
     if (saved.values && k in saved.values) values[k] = saved.values[k];
   }
-  setGrid();
+  applyField(values.shape, values.proportion);
   wallOps = (saved.ops || []).filter(op => op.k === 'svg' ? op.src : op.pts?.length);
   if (wallOps.length) hasInteracted = true;
   gridDirty = true;
@@ -1217,7 +1208,7 @@ function resize() {
   const gutter = sheet.clientWidth < 520 ? 8 : GUTTER;
   const W = Math.max(40, sheet.clientWidth - gutter * 2);
   const H = Math.max(40, sheet.clientHeight - gutter * 2);
-  const a = ASPECTS[values.format] || 1;
+  const a = aspect();
   if (W / H > a) { Sy = H; Sx = Sy * a; }
   else { Sx = W; Sy = Sx / a; }
   dpr = Math.min(devicePixelRatio || 1, 2);
@@ -1253,7 +1244,7 @@ function frame(now) {
 
 /* ===== инициализация ===== */
 
-setGrid();
+applyField(values.shape, values.proportion);
 load();
 setBrush(values.brush);
 new ResizeObserver(resize).observe(sheet);
