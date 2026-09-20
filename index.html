@@ -34,14 +34,13 @@ button {
 button:hover:not(:disabled) { background: #2c2c29; border-color: #77756f; }
 button:disabled { opacity: .35; cursor: default; }
 button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
-button.active, .btn-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-button.active:hover:not(:disabled), .btn-active:hover:not(:disabled) { background: #d7d3cb; }
 
 /* ===== колонка настроек ===== */
 .col { flex: none; width: 0; overflow: hidden; background: var(--panel);
   border-right: 1px solid transparent; transition: width var(--t) var(--ease), border-color var(--t); }
 .col.open { width: 264px; border-right-color: var(--border); }
-.col-in { width: 264px; padding: 12px 14px; opacity: 0; transform: translateX(-10px);
+.col-in { width: 264px; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px 14px; opacity: 0; transform: translateX(-10px);
   transition: opacity .16s ease .04s, transform .16s var(--ease) .04s; }
 .col.open .col-in { opacity: 1; transform: none; }
 
