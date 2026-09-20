@@ -1048,7 +1048,7 @@ function uiState() {
     mode, tool: wallTool, railWide, panelOpen,
     playing: !paused, auto: on('auto'), seeWalls: on('showWalls'),
     speed: num('speed'), canUndo: undoStack.length > 0, canGrow: wallsPresent || !!growth,
-    placingSVG: !!svgOverlay, growthState: growthState(),
+    placingSVG: !!svgOverlay, svgMode: svgOverlay?.mode || '', svgInvert: !!svgOverlay?.invert, growthState: growthState(),
   };
 }
 
@@ -1138,6 +1138,14 @@ const actions = {
     if (!o) return;
     scaleSVG(o.baseH * pct / 100, o.x + overlayWidth(o) / 2, o.y + o.h / 2);
   },
+  setThreshold: v => { if (!svgOverlay) return; svgOverlay.threshold = v; refreshPreview(); },
+  setBlur: v => { if (!svgOverlay) return; svgOverlay.blur = v; refreshPreview(); },
+  toggleInvert: () => {
+    if (!svgOverlay) return;
+    svgOverlay.invert = !svgOverlay.invert;
+    refreshPreview();
+    updateControls(true);
+  },
 };
 
 /* Пересборка рейки и колонки убивает фокус и рвёт перетаскивание ползунков
@@ -1152,7 +1160,7 @@ function updateControls(force = false) {
     ? 'размещение картинки'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   const narrow = matchMedia('(max-width: 720px)').matches;
-  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG,
+  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG, s.svgMode, s.svgInvert,
                s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls, narrow].join('|');
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;
