@@ -47,7 +47,7 @@ export function buildRail(root, s, a) {
     root.append(button('hand', 'двигать', { on: s.tool === 'hand', click: () => a.setTool('hand') }));
     root.append(rule());
     root.append(button('undo', 'отменить', { ghost: true, key: '⌘Z', disabled: !s.canUndo, click: a.undo }));
-    root.append(button('svg', 'вставить картинку', { ghost: true, click: a.importSVG }));
+    root.append(button('svg', 'вставить картинку', { ghost: true, key: '⌘V', click: a.importSVG }));
     root.append(button('clear', 'очистить', { ghost: true, click: a.clearWalls }));
   } else {
     root.append(caption('воспроизведение'));
