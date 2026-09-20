@@ -584,6 +584,8 @@ function exportPNG() {
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
   const g = tmp.getContext('2d');
+  g.save();
+  clipField(g, w, h);
   g.fillStyle = PAPER;
   g.fillRect(0, 0, w, h);
   const showW = mode === 'walls' || on('showWalls');
@@ -608,6 +610,7 @@ function exportPNG() {
       g.stroke();
     }
   }
+  g.restore();
   tmp.toBlob(blob => download(blob, 'png'));
 }
 
@@ -651,10 +654,13 @@ function exportSVG() {
     }
     body += '</g>';
   }
+  if (shape === 'oval') {
+    defs += `<clipPath id="field"><ellipse cx="${w/2}" cy="${h/2}" rx="${w/2}" ry="${h/2}"/></clipPath>`;
+  }
+  const clip = shape === 'oval' ? ' clip-path="url(#field)"' : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">`
-    + `<rect width="${w}" height="${h}" fill="${PAPER}"/>`
     + (defs ? `<defs>${defs}</defs>` : '')
-    + body + '</svg>';
+    + `<g${clip}><rect width="${w}" height="${h}" fill="${PAPER}"/>` + body + '</g></svg>';
   download(new Blob([svg], { type: 'image/svg+xml' }), 'svg');
 }
 
@@ -1218,6 +1224,7 @@ function resize() {
   canvas.style.height = Sy + 'px';
   rebuildWallCanvas();
   fitCanvas();
+  canvas.style.borderRadius = shape === 'oval' ? '50%' : '0';
 }
 
 /* ===== главный цикл ===== */
@@ -1230,12 +1237,11 @@ function frame(now) {
     debt -= STEP;
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, Sx, Sy);
+  ctx.save();
+  clipField(ctx, Sx, Sy);
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, Sx, Sy);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, Sx, Sy);
-  ctx.clip();
   if (mode === 'walls') wallDraw();
   else growDraw();
   ctx.restore();
