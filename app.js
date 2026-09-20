@@ -999,22 +999,10 @@ function setMode(newMode) {
 }
 
 function updateHint() {
-  if (svgOverlay) {
-    hintEl.hidden = true;
-    return;
-  }
-  if (mode === 'walls' && !hasInteracted) {
-    hintEl.hidden = false;
-    hintEl.textContent = 'нарисуйте стены — вокруг них пойдёт рост';
-    return;
-  }
   ensureGrid();
-  if (mode === 'walls' && wallsPresent && !growth) {
-    hintEl.hidden = false;
-    hintEl.textContent = 'готово — включите «рост» слева';
-    return;
-  }
-  hintEl.hidden = true;
+  const show = mode === 'walls' && !svgOverlay && !wallsPresent && !hasInteracted;
+  hintEl.hidden = !show;
+  hintEl.textContent = 'нарисуйте стены — вокруг них пойдёт рост';
 }
 
 function updateGrowButton() {
