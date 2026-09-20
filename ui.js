@@ -86,3 +86,110 @@ function tempo(s, a) {
   });
   return row;
 }
+
+/* ===== колонка настроек =====
+   Постоянная колонка вместо временной панели: три честные группы параметров
+   роста, форма холста иконками, пресеты в подвал. */
+
+const COARSE = matchMedia('(pointer: coarse)').matches;
+
+function field(label, key, value, min, max, step, a) {
+  const l = document.createElement('label');
+  l.className = 'field';
+  l.innerHTML = `<span>${label} · ${value}</span>`
+    + `<input type="range" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  const cap = l.querySelector('span'), input = l.querySelector('input');
+  input.addEventListener('input', () => {
+    cap.textContent = `${label} · ${input.value}`;
+    a.setValue(key, Number(input.value));
+  });
+  return l;
+}
+
+const GROUPS = {
+  заселение: [
+    ['побегов за касание', 'seeds', 1, 14, 1],
+    ['плотность побегов', 'crowd', 0, 30, 1],
+    ['тяга к касанию', 'pull', 0, 2, 0.05],
+  ],
+  движение: [
+    ['извив', 'wander', 0.2, 2.5, 0.1],
+    ['прямизна', 'straight', 0, 1, 0.02],
+    ['ветвление', 'branch', 0, 8, 1],
+    ['жизнь побега', 'life', 0.5, 6, 0.5],
+  ],
+  линия: [
+    ['толщина ветвей', 'mass', 1, 8, 1],
+    ['просвет', 'gap', 0.002, 0.03, 0.001],
+    ['длина шага', 'step', 0.003, 0.03, 0.001],
+  ],
+};
+
+export function buildSettings(root, mode, values, a, svg) {
+  root.innerHTML = '';
+
+  /* Размещение SVG — отдельное состояние колонки: пока оно идёт,
+     остальные настройки не нужны и только мешают. */
+  if (svg) {
+    root.insertAdjacentHTML('beforeend', '<h3>разместить SVG</h3>');
+    const l = document.createElement('label');
+    l.className = 'field';
+    const pct = Math.round(svg.h / svg.baseH * 100);
+    l.innerHTML = `<span>масштаб · ${pct}%</span>`
+      + `<input type="range" min="10" max="500" step="1" value="${pct}">`;
+    l.querySelector('input').addEventListener('input', e => a.setSVGScale(Number(e.target.value)));
+    root.append(l);
+    return;
+  }
+
+  if (mode === 'walls') {
+    root.insertAdjacentHTML('beforeend', '<h3>кисть</h3>');
+    root.append(field(COARSE ? 'размер (долгий тап)' : 'размер (колесо)', 'brush', values.brush, 2, 26, 1, a));
+    root.insertAdjacentHTML('beforeend', '<h3>холст</h3>'
+      + `<div class="fmt">
+           <button data-shape="rect" class="${shape === 'rect' ? 'on' : ''}" title="прямоугольник"><i class="rect"></i></button>
+           <button data-shape="oval" class="${shape === 'oval' ? 'on' : ''}" title="овал"><i class="oval"></i></button>
+         </div>`);
+    root.querySelectorAll('[data-shape]').forEach(b =>
+      b.addEventListener('click', () => a.setShape(b.dataset.shape)));
+    const p = document.createElement('label');
+    p.className = 'field';
+    p.innerHTML = `<span>пропорция · ${ratioLabel()}</span>`
+      + `<input type="range" min="-1" max="1" step="0.05" value="${proportion}">`;
+    const pCap = p.querySelector('span'), pInput = p.querySelector('input');
+    pInput.addEventListener('input', e => {
+      a.setProportion(Number(e.target.value));
+      pCap.textContent = `пропорция · ${ratioLabel()}`;
+    });
+    root.append(p);
+    return;
+  }
+
+  root.insertAdjacentHTML('beforeend', '<h3>заселение</h3>'
+    + `<div class="seg">${['у стен', 'у нароста', 'везде']
+        .map((t, i) => `<button data-sow="${i}" class="${values.sow === i ? 'on' : ''}" aria-pressed="${values.sow === i}">${t}</button>`).join('')}</div>`);
+  root.querySelectorAll('[data-sow]').forEach(b =>
+    b.addEventListener('click', () => {
+      a.setValue('sow', Number(b.dataset.sow));
+      root.querySelectorAll('[data-sow]').forEach(x => {
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+    }));
+
+  for (const [title, rows] of Object.entries(GROUPS)) {
+    if (title !== 'заселение') root.insertAdjacentHTML('beforeend', `<h3>${title}</h3>`);
+    for (const [label, key, min, max, step] of rows) root.append(field(label, key, values[key], min, max, step, a));
+  }
+
+  const foot = document.createElement('div');
+  foot.className = 'foot';
+  foot.innerHTML = '<h3 style="margin-top:0">пресет</h3>'
+    + `<div class="presets">${['мох', 'иней', 'плети', 'корни']
+        .map(n => `<button data-preset="${n}">${n}</button>`).join('')}</div>`
+    + `<button type="button" class="t ghost wide-btn">${icon('restart')}<span class="lbl">сбросить параметры</span></button>`;
+  foot.querySelectorAll('[data-preset]').forEach(b =>
+    b.addEventListener('click', () => a.applyPreset(b.dataset.preset)));
+  foot.querySelector('.wide-btn').addEventListener('click', a.resetGrowth);
+  root.append(foot);
+}

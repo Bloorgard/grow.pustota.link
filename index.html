@@ -37,11 +37,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 button.active, .btn-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 button.active:hover:not(:disabled), .btn-active:hover:not(:disabled) { background: #d7d3cb; }
 
-/* ===== колонка настроек =====
-   Контейнер временный: без ширины flex растягивает колонку на весь остаток
-   и схлопывает сцену. Содержимое (buildPanel) остаётся неоформленным
-   до задачи 5 — стилизуется только контейнер. */
-.col { flex: none; width: 300px; overflow-y: auto; padding: 1rem; background: var(--panel); border-right: 1px solid var(--border); }
+/* ===== колонка настроек ===== */
+.col { flex: none; width: 0; overflow: hidden; background: var(--panel);
+  border-right: 1px solid transparent; transition: width var(--t) var(--ease), border-color var(--t); }
+.col.open { width: 264px; border-right-color: var(--border); }
+.col-in { width: 264px; padding: 12px 14px; opacity: 0; transform: translateX(-10px);
+  transition: opacity .16s ease .04s, transform .16s var(--ease) .04s; }
+.col.open .col-in { opacity: 1; transform: none; }
+
+/* Класс общий для колонки и мобильного листа. Привязывать к .col нельзя:
+   на телефоне заголовки возьмут браузерный дефолт и станут вдвое крупнее. */
+.settings h3 { font-size: 9px; letter-spacing: .11em; text-transform: uppercase; color: #6f6d67;
+  font-weight: 400; margin: 14px 0 8px; }
+.settings h3:first-child { margin-top: 0; }
+.settings .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.settings .field span { font-size: 11px; color: var(--muted); }
+.settings input[type=range] { width: 100%; accent-color: var(--fg); height: 16px; }
+.settings .seg { display: flex; gap: 4px; margin-bottom: 10px; }
+.settings .seg button { flex: 1; height: 30px; border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px;
+  transition: background .12s, color .12s, border-color .12s; }
+.settings .seg button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.settings .fmt { display: flex; gap: 5px; margin-bottom: 10px; }
+.settings .fmt button { width: 38px; height: 32px; border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: border-color .12s, background .12s; }
+.settings .fmt button.on { border-color: var(--fg); background: #ffffff14; }
+.settings .fmt i { display: block; width: 17px; height: 17px; border: 1.5px solid var(--fg); }
+.settings .fmt i.rect { border-radius: 1px; }
+.settings .fmt i.oval { border-radius: 50%; }
+.settings .presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.settings .presets button { flex: 1 1 calc(50% - 4px); height: 30px; border: 1px solid var(--border);
+  border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; }
+.settings .foot { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; }
+.settings .wide-btn { width: 100%; justify-content: flex-start; margin-top: 6px; }
+.settings .wide-btn .lbl, .settings .wide-btn .k { opacity: 1; }
 
 /* ===== сцена и холст ===== */
 main { flex: 1; display: flex; min-height: 0; overflow: hidden; }

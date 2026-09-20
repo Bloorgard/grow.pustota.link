@@ -7,7 +7,7 @@ import {
   setField, aspect, ratioLabel, at, inBounds, clipField,
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
-import { buildRail } from './ui.js';
+import { buildRail, buildSettings } from './ui.js';
 
 const INK = '#f1ede5';
 const PAPER = '#161616';
@@ -810,189 +810,12 @@ function key(event) {
 
 /* ===== панель ===== */
 
-const panel = document.getElementById('colIn');
 const hintEl = document.getElementById('hint');
-let panelTarget = panel;
 
 /* Новое правило расчёта — задача 6. Сейчас колонка стоит в потоке,
    поэтому холст и так центрируется в остатке сцены. */
 function fitCanvas() {
   canvas.style.transform = '';
-}
-
-function makeRange(key, label, min, max, step) {
-  const el = document.createElement('label');
-  const caption = document.createElement('span');
-  const input = document.createElement('input');
-  input.type = 'range'; input.min = min; input.max = max; input.step = step;
-  input.value = values[key];
-  const paint = () => { caption.textContent = `${label} · ${values[key]}`; };
-  input.addEventListener('input', () => {
-    values[key] = Number(input.value);
-    wake();
-    paint();
-    saveSoon();
-  });
-  if (key === 'gap') input.addEventListener('change', rebuildGrowthMask);
-  paint(); el.append(caption, input); panelTarget.append(el);
-  return input;
-}
-
-function makeToggle(key, label) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  const paint = () => {
-    btn.textContent = `${label} · ${values[key] ? 'да' : 'нет'}`;
-    btn.setAttribute('aria-pressed', String(values[key]));
-  };
-  btn.addEventListener('click', () => { values[key] = !values[key]; wake(); paint(); updateHint(); saveSoon(); });
-  paint(); panelTarget.append(btn);
-}
-
-function makePick(key, label, options, after) {
-  const wrap = document.createElement('div');
-  wrap.className = 'pick-row';
-  const labelEl = document.createElement('span');
-  labelEl.className = 'pick-label';
-  labelEl.textContent = label;
-  wrap.append(labelEl);
-  const getIdx = () => typeof values[key] === 'number' ? values[key] : options.indexOf(values[key]);
-  options.forEach((opt, i) => {
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.textContent = opt;
-    btn.className = i === getIdx() ? 'btn-active' : '';
-    btn.setAttribute('aria-pressed', String(i === getIdx()));
-    btn.addEventListener('click', () => {
-      values[key] = typeof values[key] === 'number' ? i : opt;
-      wake();
-      wrap.querySelectorAll('button').forEach((b, j) => {
-        b.className = j === i ? 'btn-active' : '';
-        b.setAttribute('aria-pressed', String(j === i));
-      });
-      if (after) after();
-      saveSoon();
-    });
-    wrap.append(btn);
-  });
-  panelTarget.append(wrap);
-}
-
-function makeButton(text, action) {
-  const btn = document.createElement('button');
-  btn.type = 'button'; btn.textContent = text;
-  btn.addEventListener('click', action);
-  panelTarget.append(btn);
-}
-
-function makeNote(text) {
-  const note = document.createElement('p');
-  note.className = 'panel-note';
-  note.textContent = text;
-  panelTarget.append(note);
-}
-
-function hr() { panel.append(document.createElement('hr')); }
-
-function makeSection(title, collapsed = false) {
-  const wrap = document.createElement('div');
-  wrap.className = 'section' + (collapsed ? ' collapsed' : '');
-  const head = document.createElement('button');
-  head.type = 'button';
-  head.setAttribute('aria-expanded', String(!collapsed));
-  head.className = 'section-head';
-  head.textContent = title;
-  const body = document.createElement('div');
-  body.className = 'section-body';
-  head.addEventListener('click', () => {
-    wrap.classList.toggle('collapsed');
-    head.setAttribute('aria-expanded', String(!wrap.classList.contains('collapsed')));
-  });
-  wrap.append(head, body);
-  panel.append(wrap);
-  panelTarget = body;
-  return body;
-}
-
-function endSection() { panelTarget = panel; }
-
-function applyPreset(name) {
-  Object.assign(values, PRESETS[name]);
-  rebuildGrowthMask();
-  buildPanel();
-  saveSoon();
-}
-
-function buildPanel() {
-  panel.innerHTML = '';
-  panelTarget = panel;
-  const heading = document.createElement('div');
-  heading.className = 'panel-head';
-  const title = document.createElement('h2');
-  title.textContent = mode === 'walls' ? 'стены' : 'характер роста';
-  const close = document.createElement('button');
-  close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Закрыть настройки');
-  close.addEventListener('click', () => { panelOpen = false; updateControls(); });
-  heading.append(title, close); panel.append(heading);
-
-  if (mode === 'walls') {
-    makePick('shape', 'форма холста', ['rect', 'oval'], () => {
-      applyField(values.shape, values.proportion);
-      resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true);
-    });
-    const proportionInput = makeRange('proportion', 'пропорция', -1, 1, 0.05);
-    proportionInput.addEventListener('change', () => {
-      applyField(values.shape, values.proportion);
-      resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true);
-    });
-    hr();
-    makeButton('очистить стены', clearWalls);
-    makeNote('Размер кисти — в строке под холстом или колесом мыши. Очистку и штрихи можно отменить: ⌘/Ctrl+Z.');
-  } else {
-    const row = document.createElement('div');
-    row.className = 'pick-row';
-    const label = document.createElement('span');
-    label.className = 'pick-label';
-    label.textContent = 'пресет';
-    row.append(label);
-    for (const name of Object.keys(PRESETS)) {
-      const btn = document.createElement('button');
-      btn.type = 'button'; btn.textContent = name;
-      btn.addEventListener('click', () => applyPreset(name));
-      row.append(btn);
-    }
-    panel.append(row);
-    hr();
-    makeToggle('auto', 'автоматический засев');
-    makeToggle('showWalls', 'показывать стены');
-    hr();
-    makeRange('mass', 'толщина ветвей', 1, 8, 1);
-    makeRange('branch', 'ветвление', 0, 8, 1);
-    makeSection('дополнительно', true);
-    makeRange('seeds', 'побегов за касание', 1, 14, 1);
-    makeRange('crowd', 'плотность побегов', 0, 30, 1);
-    makePick('sow', 'засев', ['у стен', 'у нароста', 'повсюду']);
-    makeRange('gap', 'просвет', 0.002, 0.03, 0.001);
-    makeRange('step', 'длина шага', 0.003, 0.03, 0.001);
-    makeRange('wander', 'извив', 0.2, 2.5, 0.1);
-    makeRange('straight', 'прямизна', 0, 1, 0.02);
-    makeRange('pull', 'тяга к касанию', 0, 2, 0.05);
-    makeRange('life', 'жизнь побега', 0.5, 6, 0.5);
-    makeButton('сбросить параметры', () => {
-      for (const k of GROWTH_KEYS) values[k] = DEFAULTS[k];
-      rebuildGrowthMask();
-      buildPanel();
-      saveSoon();
-    });
-    endSection();
-    makeNote('Параметры влияют на дальнейший рост. Уже нарисованные ветви сохраняются.');
-  }
-
-  makeSection('клавиши', true);
-  const keys = document.createElement('div');
-  keys.className = 'keys';
-  keys.innerHTML = '<b>пробел</b> пауза<br><b>R</b> заново<br><b>C</b> выключить засев<br><b>⌘/Ctrl+Z</b> отменить<br><b>Esc</b> закрыть';
-  panelTarget.append(keys);
-  endSection();
 }
 
 /* ===== состояние интерфейса ===== */
@@ -1027,6 +850,24 @@ const actions = {
   togglePanel: () => { panelOpen = !panelOpen; updateControls(true); fitCanvas(); saveSoon(); },
   save: () => openSavePopover(),
   toggleRail: () => { railWide = !railWide; updateControls(true); fitCanvas(); saveSoon(); },
+  setValue: (key, v) => {
+    values[key] = v;
+    if (key === 'gap') rebuildGrowthMask();
+    wake(); saveSoon();
+  },
+  /* Смена формы — по клику, не по протяжке: полная пересборка колонки здесь
+     уместна и нужна, чтобы подсветка кнопки и пересчёт холста не разошлись. */
+  setShape: s => { applyField(s, proportion); resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true); saveSoon(); },
+  /* Пропорция меняется протяжкой ползунка: полная пересборка колонки здесь
+     вырвала бы фокус из-под курсора, поэтому подпись обновляет сам ui.js. */
+  setProportion: p => { applyField(shape, p); resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(); saveSoon(); },
+  applyPreset: name => { Object.assign(values, PRESETS[name]); rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
+  resetGrowth: () => { for (const k of GROWTH_KEYS) values[k] = DEFAULTS[k]; rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
+  setSVGScale: pct => {
+    const o = svgOverlay;
+    if (!o) return;
+    scaleSVG(o.baseH * pct / 100, o.x + overlayWidth(o) / 2, o.y + o.h / 2);
+  },
 };
 
 /* Пересборка рейки и колонки убивает фокус и рвёт перетаскивание ползунков
@@ -1045,8 +886,8 @@ function updateControls(force = false) {
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;
   buildRail(document.getElementById('rail'), s, actions);
-  document.getElementById('col').hidden = !panelOpen;
-  if (panelOpen) buildPanel();
+  document.getElementById('col').className = 'col' + (panelOpen ? ' open' : '');
+  buildSettings(document.getElementById('colIn'), mode, values, actions, svgOverlay);
 }
 
 function patchTempo(s) {
@@ -1242,7 +1083,6 @@ load();
 setBrush(values.brush);
 new ResizeObserver(resize).observe(sheet);
 resize();
-buildPanel();
 updateControls();
 updateGrowButton();
 requestAnimationFrame(frame);
