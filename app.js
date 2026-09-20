@@ -1053,7 +1053,9 @@ function updateControls() {
   pause.textContent = paused ? 'продолжить' : 'пауза';
   pause.setAttribute('aria-pressed', String(paused));
   const note = document.getElementById('note');
-  note.textContent = { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
+  note.textContent = svgOverlay
+    ? 'размещение SVG'
+    : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   for (const [id, active] of [['brush', !brushErase], ['eraser', brushErase]]) {
     const button = document.getElementById(id);
     button.classList.toggle('btn-active', active);
