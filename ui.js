@@ -47,7 +47,7 @@ export function buildRail(root, s, a) {
     root.append(button('hand', 'двигать', { on: s.tool === 'hand', click: () => a.setTool('hand') }));
     root.append(rule());
     root.append(button('undo', 'отменить', { ghost: true, key: '⌘Z', disabled: !s.canUndo, click: a.undo }));
-    root.append(button('svg', 'вставить картинку', { ghost: true, click: a.importSVG }));
+    root.append(button('svg', 'вставить картинку', { ghost: true, key: '⌘V', click: a.importSVG }));
     root.append(button('clear', 'очистить', { ghost: true, click: a.clearWalls }));
   } else {
     root.append(caption('воспроизведение'));
@@ -236,6 +236,48 @@ export function buildSettings(root, mode, values, a, svg) {
       scaleCap.textContent = `масштаб · ${e.target.value}%`;
     });
     root.append(l);
+
+    /* Автомат ошибается на пограничных картинках, поэтому переключатель
+       виден всегда: им и включают порог, и отказываются от него. */
+    const bin = document.createElement('button');
+    bin.type = 'button';
+    bin.className = 't ghost wide-btn' + (svg.binary ? ' on' : '');
+    bin.innerHTML = icon('contrast') + '<span class="lbl">два тона</span>';
+    bin.addEventListener('click', a.toggleBinary);
+    root.append(bin);
+
+    if (svg.binary) {
+      const th = document.createElement('label');
+      th.className = 'field';
+      th.dataset.key = 'threshold';
+      th.innerHTML = `<span>порог · ${svg.threshold}%</span>`
+        + `<input type="range" min="0" max="100" step="1" value="${svg.threshold}">`;
+      const thCap = th.querySelector('span'), thInput = th.querySelector('input');
+      thInput.addEventListener('input', e => {
+        a.setThreshold(Number(e.target.value));
+        thCap.textContent = `порог · ${e.target.value}%`;
+      });
+      root.append(th);
+
+      const bl = document.createElement('label');
+      bl.className = 'field';
+      bl.dataset.key = 'blur';
+      bl.innerHTML = `<span>сглаживание · ${svg.blur}</span>`
+        + `<input type="range" min="0" max="10" step="1" value="${svg.blur}">`;
+      const blCap = bl.querySelector('span'), blInput = bl.querySelector('input');
+      blInput.addEventListener('input', e => {
+        a.setBlur(Number(e.target.value));
+        blCap.textContent = `сглаживание · ${e.target.value}`;
+      });
+      root.append(bl);
+
+      const inv = document.createElement('button');
+      inv.type = 'button';
+      inv.className = 't ghost wide-btn' + (svg.invert ? ' on' : '');
+      inv.innerHTML = icon('invert') + '<span class="lbl">инвертировать</span>';
+      inv.addEventListener('click', a.toggleInvert);
+      root.append(inv);
+    }
     return;
   }
 

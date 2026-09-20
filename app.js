@@ -8,6 +8,7 @@ import {
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
 import { buildRail, buildSettings, buildBar, buildQuick } from './ui.js';
+import { analyze, binarize, toPNG } from './picture.js';
 
 const INK = '#f1ede5';
 const PAPER = '#161616';
@@ -286,6 +287,26 @@ let svgOverlay = null;
 let importVersion = 0;
 const overlayWidth = o => o.h * o.ia / AR;
 
+/* Предпросмотр считается на уменьшенной копии: на фотографии 4000×3000
+   полноразмерный пересчёт на каждое движение ползунка не укладывается в кадр.
+   Запекается картинка уже в PREVIEW_BAKE. */
+const PREVIEW_SIDE = 700;
+const PREVIEW_BAKE = 1600;
+
+/* Одна развилка на оба случая: предпросмотр и запекание должны считаться
+   одинаково, иначе применение даст не то, что было видно на холсте. */
+function bakedImage(o, maxSide) {
+  return o.binary
+    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide })
+    : null;
+}
+
+function refreshPreview() {
+  const o = svgOverlay;
+  if (!o) return;
+  o.shown = bakedImage(o, PREVIEW_SIDE) || o.img;
+}
+
 /* Картинка-заготовка: SVG остаётся резким при любом масштабе, растр — нет,
    но механика одна: показ через drawImage, столкновения с теневого растра. */
 function loadPicture(file) {
@@ -293,7 +314,7 @@ function loadPicture(file) {
   const isSVG = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
   showMessage();
   const fail = () => {
-    if (version === importVersion) showMessage('Не удалось открыть файл. Подойдут SVG и PNG.');
+    if (version === importVersion) showMessage('Не удалось открыть файл. Подойдут SVG, PNG, JPEG, WEBP и GIF.');
   };
   const reader = new FileReader();
   reader.onerror = fail;
@@ -316,14 +337,17 @@ function loadPicture(file) {
       const ia = (img.naturalWidth || 300) / (img.naturalHeight || 300);
       let h = 0.6, w = h * ia / AR;
       if (w > 0.6) { w = 0.6; h = w * AR / ia; }
+      const { binary, threshold, invert } = analyze(img);
       svgOverlay = {
         img, src, ia, h, baseH: h,
         x: (1 - w) / 2, y: (1 - h) / 2,
         dragging: false, grabDx: 0, grabDy: 0,
+        binary, threshold, blur: 0, invert, shown: img,
       };
+      refreshPreview();
       hasInteracted = true;
       syncSVGScale();
-      updateControls();
+      updateControls(true);
       updateHint();
       updateGrowButton();
     };
@@ -337,7 +361,17 @@ function applySVG() {
   showMessage();
   const o = svgOverlay;
   pushUndo();
-  wallOps.push({ k: 'svg', src: o.src, img: o.img, x: o.x, y: o.y, w: overlayWidth(o), h: o.h });
+  /* Запекаем один раз: дальше картинка живёт как обычная вставленная —
+     её двигает ладошка, масштабирует ползунок рисунка, отменяет ⌘Z.
+     В op.img кладётся холст (рисуется сразу, ждать загрузки не надо),
+     в op.src — data-URL для хранилища и SVG-экспорта. */
+  const baked = bakedImage(o, PREVIEW_BAKE);
+  wallOps.push({
+    k: 'svg',
+    src: baked ? toPNG(baked) : o.src,
+    img: baked || o.img,
+    x: o.x, y: o.y, w: overlayWidth(o), h: o.h,
+  });
   wallsChanged = true;
   svgOverlay = null;
   gridDirty = true;
@@ -630,7 +664,7 @@ function drawSVGOverlay() {
   ctx.save();
   ctx.globalAlpha = 0.7;
   ctx.filter = 'brightness(0) invert(1)';
-  ctx.drawImage(o.img, px, py, pw, ph);
+  ctx.drawImage(o.shown, px, py, pw, ph);
   ctx.restore();
   ctx.strokeStyle = MUTED;
   ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.002);
@@ -1030,7 +1064,7 @@ function uiState() {
     mode, tool: wallTool, railWide, panelOpen,
     playing: !paused, auto: on('auto'), seeWalls: on('showWalls'),
     speed: num('speed'), canUndo: undoStack.length > 0, canGrow: wallsPresent || !!growth,
-    placingSVG: !!svgOverlay, growthState: growthState(),
+    placingSVG: !!svgOverlay, svgBinary: !!svgOverlay?.binary, svgInvert: !!svgOverlay?.invert, growthState: growthState(),
   };
 }
 
@@ -1120,6 +1154,20 @@ const actions = {
     if (!o) return;
     scaleSVG(o.baseH * pct / 100, o.x + overlayWidth(o) / 2, o.y + o.h / 2);
   },
+  setThreshold: v => { if (!svgOverlay) return; svgOverlay.threshold = v; refreshPreview(); },
+  setBlur: v => { if (!svgOverlay) return; svgOverlay.blur = v; refreshPreview(); },
+  toggleInvert: () => {
+    if (!svgOverlay) return;
+    svgOverlay.invert = !svgOverlay.invert;
+    refreshPreview();
+    updateControls(true);
+  },
+  toggleBinary: () => {
+    if (!svgOverlay) return;
+    svgOverlay.binary = !svgOverlay.binary;
+    refreshPreview();
+    updateControls(true);
+  },
 };
 
 /* Пересборка рейки и колонки убивает фокус и рвёт перетаскивание ползунков
@@ -1134,7 +1182,7 @@ function updateControls(force = false) {
     ? 'размещение картинки'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   const narrow = matchMedia('(max-width: 720px)').matches;
-  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG,
+  const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG, s.svgBinary, s.svgInvert,
                s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls, narrow].join('|');
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;
@@ -1295,6 +1343,18 @@ canvas.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file && (/^image\//.test(file.type) || /\.(svg|png|jpe?g|webp|gif)$/i.test(file.name))) loadPicture(file);
 });
+/* Вставка из буфера: тот же путь, что у выбранного файла. Буфер без
+   картинки молча игнорируется — вставка текста в рисовалку не ошибка
+   пользователя, а промах мимо цели, сообщать о нём не о чем. */
+document.addEventListener('paste', event => {
+  const item = [...(event.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  const file = item.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  loadPicture(file);
+});
+
 canvas.addEventListener('wheel', wheel, { passive: false });
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
