@@ -42,7 +42,7 @@ const DEFAULTS = {
   wander: 1, straight: 0.14, pull: 0.55, life: 3,
   shape: 'rect', proportion: 0, brush: 6,
 };
-const GROWTH_KEYS = ['speed', 'mass', 'branch', 'seeds', 'crowd', 'sow', 'gap', 'step', 'wander', 'straight', 'pull', 'life'];
+const GROWTH_KEYS = ['mass', 'branch', 'seeds', 'crowd', 'sow', 'gap', 'step', 'wander', 'straight', 'pull', 'life'];
 const PRESETS = {
   'мох':   { speed: 8, mass: 5, branch: 5, seeds: 7, crowd: 12, sow: 1, gap: 0.007, step: 0.009, wander: 1, straight: 0.14, pull: 0.55, life: 3 },
   'иней':  { speed: 12, mass: 2, branch: 8, seeds: 10, crowd: 24, sow: 0, gap: 0.004, step: 0.006, wander: 1.6, straight: 0.3, pull: 0.4, life: 1.5 },
@@ -965,7 +965,6 @@ function buildPanel() {
     makeToggle('auto', 'автоматический засев');
     makeToggle('showWalls', 'показывать стены');
     hr();
-    makeRange('speed', 'скорость', 1, 16, 1);
     makeRange('mass', 'толщина ветвей', 1, 8, 1);
     makeRange('branch', 'ветвление', 0, 8, 1);
     makeSection('дополнительно', true);
