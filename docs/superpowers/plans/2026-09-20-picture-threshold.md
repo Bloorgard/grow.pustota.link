@@ -208,7 +208,8 @@ analyze(clear);
 - [ ] **Шаг 6: проба сглаживания**
 
 ```js
-const noisy = await make(g => { for (let i = 0; i < 4000; i++) { g.fillStyle = Math.random() < 0.5 ? '#000' : '#fff';
+const noisy = await make(g => { g.fillStyle = '#888'; g.fillRect(0,0,200,100);
+  for (let i = 0; i < 4000; i++) { g.fillStyle = Math.random() < 0.5 ? '#000' : '#fff';
   g.fillRect((Math.random()*200)|0, (Math.random()*100)|0, 1, 1); } });
 const count = b => { const g = b.getContext('2d'); const d = g.getImageData(0,0,b.width,b.height).data;
   let n = 0; for (let i = 0; i < b.width*b.height; i++) if (d[i*4+3] > 0) n++; return n; };
@@ -218,6 +219,8 @@ const a6 = binarize(noisy, { threshold: 50, blur: 6, invert: false, maxSide: 200
 ```
 
 Ожидается: два числа, второе **меньше** первого — размытие съело часть крошки. Если числа равны, `boxBlur` не работает.
+
+Фон картинки здесь залит серым намеренно. На холсте с прозрачным фоном проба обманывает: у прозрачных пикселей яркость нулевая, при размытии она затягивает соседние белые крапинки ниже порога, и число закрашенного **растёт**. Стеной прозрачное всё равно не станет — за это отвечает `solid`, — но мерить сглаживание на такой картинке бессмысленно.
 
 - [ ] **Шаг 7: проба инверсии**
 
