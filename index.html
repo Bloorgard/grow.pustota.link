@@ -18,6 +18,8 @@
   --border: #393936;
   --edge: #4d4d48;
   --red: #e0210f;
+  --t: .18s;
+  --ease: cubic-bezier(.2,.7,.2,1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }
@@ -35,31 +37,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 button.active, .btn-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 button.active:hover:not(:disabled), .btn-active:hover:not(:disabled) { background: #d7d3cb; }
 
-/* ===== шапка ===== */
-header {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem;
-  padding: .35rem .75rem; border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.identity { justify-self: start; font-size: .85rem; white-space: nowrap; color: var(--fg); text-decoration: none; }
-.identity:hover { color: var(--muted); }
-.modes { justify-self: center; display: flex; gap: .35rem; align-items: center; }
-.header-actions { justify-self: end; display: flex; gap: .35rem; align-items: center; min-width: 0; }
-.header-actions svg { width: 18px; height: 18px; flex-shrink: 0; }
-.header-actions button, .export-menu summary { display: flex; align-items: center; justify-content: center; gap: .5rem; }
-.export-menu { position: relative; }
-.export-menu summary {
-  min-height: 40px; padding: .55rem .75rem; border: 1px solid var(--border); border-radius: 5px;
-  font-size: .75rem; cursor: pointer; list-style: none;
-}
-.export-menu summary::-webkit-details-marker { display: none; }
-.export-menu summary:hover { background: #2c2c29; }
-.export-options {
-  position: absolute; top: calc(100% + .5rem); right: 0; z-index: 8; display: flex; gap: .4rem;
-  padding: .5rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px #0005;
-}
+/* ===== колонка настроек =====
+   Контейнер временный: без ширины flex растягивает колонку на весь остаток
+   и схлопывает сцену. Содержимое (buildPanel) остаётся неоформленным
+   до задачи 5 — стилизуется только контейнер. */
+.col { flex: none; width: 300px; overflow-y: auto; padding: 1rem; background: var(--panel); border-right: 1px solid var(--border); }
 
 /* ===== сцена и холст ===== */
-main { flex: 1; position: relative; display: flex; min-height: 0; overflow: hidden; }
+main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--stage); }
 .sheet { position: relative; flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; }
 #canvas {
@@ -74,17 +59,6 @@ main { flex: 1; position: relative; display: flex; min-height: 0; overflow: hidd
   font-family: 'PT Sans', sans-serif; font-size: .85rem; line-height: 1.4; pointer-events: none;
 }
 
-/* ===== док под холстом ===== */
-.dock {
-  flex-shrink: 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .3rem;
-  padding: .45rem .75rem calc(.45rem + env(safe-area-inset-bottom));
-  background: var(--bg); border-top: 1px solid var(--border);
-}
-.tool-group { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; align-items: center; }
-.dock-range { display: flex; align-items: center; gap: .4rem; padding: 0 .5rem; color: var(--muted); font-size: .7rem; white-space: nowrap; }
-.dock-range input[type="range"] { width: 104px; min-height: 32px; accent-color: var(--fg); }
-.dock-sep { width: 1px; align-self: stretch; margin: .2rem .25rem; background: var(--border); }
-
 /* ===== сообщение ===== */
 #message {
   position: absolute; top: .75rem; left: 50%; transform: translateX(-50%); z-index: 6;
@@ -93,111 +67,83 @@ main { flex: 1; position: relative; display: flex; min-height: 0; overflow: hidd
   box-shadow: 0 8px 24px #0006;
 }
 
-/* ===== панель ===== */
-.sketch-panel {
-  position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: 300px;
-  overflow-y: auto; overscroll-behavior: contain; padding: 1rem;
-  background: var(--panel); border-left: 1px solid var(--border); box-shadow: -14px 0 40px #0006;
+/* ===== рейка ===== */
+.rail {
+  flex: none; width: 50px; display: flex; flex-direction: column; gap: 2px; padding: 8px;
+  overflow: hidden; background: var(--bg); border-right: 1px solid var(--border);
+  transition: width var(--t) var(--ease);
 }
-.panel-head { position: sticky; top: -1rem; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin: -1rem -1rem .6rem; padding: 1rem 1rem .6rem; background: var(--panel); }
-.panel-head h2 { font-weight: 400; font-size: .9rem; }
-.panel-head button { font-size: 1.1rem; min-width: 40px; }
-.sketch-panel label { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .85rem; }
-.sketch-panel label span, .pick-label { font-size: .75rem; color: var(--muted); }
-.sketch-panel input[type="range"] { width: 100%; min-height: 32px; accent-color: var(--fg); }
-.sketch-panel button { width: 100%; text-align: left; margin-bottom: .4rem; }
-.sketch-panel .panel-head button, .sketch-panel .pick-row button { width: auto; margin: 0; }
-.sketch-panel hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
-.section { border-top: 1px solid var(--border); margin-top: .7rem; padding-top: .4rem; }
-.sketch-panel .section-head { border: 0; padding: .65rem 0; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: .65rem; display: flex; justify-content: space-between; align-items: center; }
-.section-head::after { content: '−'; font-size: 1rem; }
-.section.collapsed .section-head::after { content: '+'; }
-.section.collapsed .section-body { display: none; }
-.pick-row { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .85rem; }
-.pick-row button { flex: 1 1 calc(50% - .35rem); text-align: center; min-width: 0; }
-.pick-label { width: 100%; margin: .3rem 0; }
-.panel-note { font-family: 'PT Sans', sans-serif; color: var(--muted); font-size: .85rem; line-height: 1.45; margin: .5rem 0 1rem; }
-.keys { font-size: .72rem; color: var(--muted); line-height: 1.9; }
-.keys b { display: inline-block; min-width: 5.5rem; font-weight: 400; color: var(--fg); }
+.rail.wide { width: 176px; }
+.rail .spacer { flex: 1; min-height: 8px; }
+.rail hr { border: 0; border-top: 1px solid var(--border); margin: 6px 2px; flex: none; }
+.cap { position: relative; height: 22px; flex: none; display: flex; align-items: center; padding-left: 8px; }
+.cap b {
+  font: inherit; font-size: 9px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase;
+  color: #6f6d67; white-space: nowrap; opacity: 0; transition: opacity .12s ease;
+}
+.cap i { position: absolute; left: 8px; width: 18px; height: 1px; background: var(--border); transition: opacity .12s ease; }
+.rail.wide .cap b { opacity: 1; transition-delay: .07s; }
+.rail.wide .cap i { opacity: 0; }
+button.t {
+  display: flex; align-items: center; gap: 10px; height: 34px; flex: none; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fg);
+  cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; overflow: hidden;
+  transition: background .12s ease, color .12s ease;
+}
+button.t:hover:not(:disabled) { background: #2c2c29; }
+button.t:disabled { opacity: .35; cursor: default; }
+button.t.on { background: var(--fg); color: var(--bg); }
+button.t.ghost { color: var(--muted); }
+button.t .ic { width: 18px; height: 18px; flex: none; stroke: currentColor; stroke-width: 1.5; fill: none;
+  stroke-linecap: round; stroke-linejoin: round; }
+button.t .lbl, button.t .k { opacity: 0; transition: opacity .12s ease; }
+button.t .k { margin-left: auto; font-size: 10px; color: #6f6d67; }
+button.t.on .k { color: #5a5a55; }
+.rail.wide button.t .lbl, .rail.wide button.t .k { opacity: 1; transition-delay: .07s; }
+.tempo { display: flex; align-items: center; gap: 10px; height: 34px; flex: none; padding: 0 8px;
+  overflow: hidden; color: var(--muted); font-size: 11px; }
+.tempo .num { width: 18px; text-align: center; flex: none; }
+.tempo input { flex: 1; min-width: 0; accent-color: var(--fg); height: 14px; opacity: 0; transition: opacity .12s ease; }
+.rail.wide .tempo input { opacity: 1; transition-delay: .07s; }
+.rail:not(.wide) .tempo { cursor: pointer; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
-@media (max-width: 720px) {
-  header { grid-template-columns: auto 1fr auto; padding: .25rem .5rem; gap: .5rem; }
-  .identity { font-size: .75rem; }
-  button { min-height: 44px; padding: .55rem .65rem; }
-  .header-actions { gap: .25rem; }
-  .header-actions .action-label { display: none; }
-  .header-actions button, .export-menu summary { min-height: 44px; min-width: 44px; padding: .5rem; }
-  .dock-range { padding: 0 .25rem; }
-  .dock-range .range-label { display: none; }
-  .dock-range input[type="range"] { width: 84px; }
-  .sketch-panel { top: auto; left: 0; width: auto; max-height: 62%; border-left: 0; border-top: 1px solid var(--border); box-shadow: 0 -14px 40px #0007; }
-}
 </style>
 </head>
 <body>
 
-<header>
-  <a class="identity" href="https://pustota.link" title="pustota.link">grow</a>
-  <nav class="modes" id="modes" aria-label="Режим работы">
-    <button data-mode="walls" class="active" aria-pressed="true">стены</button>
-    <button data-mode="grow" aria-pressed="false" title="Сначала нарисуйте стены">рост</button>
-  </nav>
-  <div class="header-actions">
-    <button id="toggle" aria-label="Настройки" title="Настройки" aria-controls="panel" aria-expanded="false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 7h5m4 0h7M4 17h9m4 0h3"/><circle cx="11" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg>
-      <span class="action-label">настройки</span>
-    </button>
-    <details class="export-menu" id="export-menu">
-      <summary aria-label="Сохранить рисунок" title="Сохранить рисунок">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg>
-        <span class="action-label">сохранить</span>
-      </summary>
-      <div class="export-options">
-        <button id="export-png" aria-label="Сохранить PNG">PNG</button>
-        <button id="export-svg" aria-label="Сохранить SVG">SVG</button>
-      </div>
-    </details>
-  </div>
-</header>
+<svg hidden aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-walls" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2 2 0 0 1 3 3L10 17l-4 1 1-4Z"/></symbol>
+<symbol id="i-grow" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2Z"/></symbol>
+<symbol id="i-brush" viewBox="0 0 24 24"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></symbol>
+<symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+<symbol id="i-svg" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+<symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3l14 9-14 9Z"/></symbol>
+<symbol id="i-restart" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+<symbol id="i-auto" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M3 8h4"/><path d="M17 16h4"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.7 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a15 15 0 0 1-2.2 3.1"/><path d="M6.6 6.6A15.5 15.5 0 0 0 2 12s3.6 7 10 7a9.9 9.9 0 0 0 5.4-1.6"/><path d="m9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h5m4 0h7M4 17h9m4 0h3"/><circle cx="11" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></symbol>
+<symbol id="i-fold" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></symbol>
+<symbol id="i-unfold" viewBox="0 0 24 24"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+</defs></svg>
 
 <main>
+  <nav class="rail" id="rail" aria-label="Инструменты"></nav>
+  <div class="col" id="col"><div class="col-in settings" id="colIn"></div></div>
   <div class="stage" id="stage">
     <div class="sheet" id="sheet">
       <canvas id="canvas" aria-label="Холст для рисования стен и выращивания узора"></canvas>
-      <span id="hint">нарисуйте стены — затем включите рост</span>
-    </div>
-    <div class="dock" id="dock" aria-label="Инструменты">
-      <div class="tool-group" id="wall-tools">
-        <button id="brush" class="btn-active" aria-pressed="true">кисть</button>
-        <button id="eraser" aria-pressed="false">ластик</button>
-        <label class="dock-range" title="Размер кисти (колесо мыши)">
-          <span class="range-label" id="brush-size-label">размер · 6</span>
-          <input type="range" id="brush-size" min="2" max="26" step="1" value="6" aria-label="Размер кисти">
-        </label>
-        <span class="dock-sep" aria-hidden="true"></span>
-        <button id="undo" title="Отменить (⌘/Ctrl+Z)" disabled>отменить</button>
-        <button id="import" title="Загрузить SVG">SVG +</button>
-      </div>
-      <div class="tool-group" id="grow-tools" hidden>
-        <button id="pause" aria-pressed="false" title="Пробел">пауза</button>
-        <button id="restart" title="Заново (R)">заново</button>
-      </div>
-      <div class="tool-group" id="svg-tools" hidden>
-        <button id="svg-apply" class="btn-active">применить SVG</button>
-        <button id="svg-cancel">отменить SVG</button>
-        <label class="dock-range" title="Масштаб SVG (колесо мыши)">
-          <span class="range-label" id="svg-scale-label">масштаб · 100%</span>
-          <input type="range" id="svg-scale" min="10" max="500" step="1" value="100" aria-label="Масштаб SVG">
-        </label>
-      </div>
+      <span id="hint">нарисуйте стены — вокруг них пойдёт рост</span>
     </div>
     <div id="message" role="alert" hidden></div>
   </div>
-  <aside class="sketch-panel" id="panel" aria-label="Настройки" hidden></aside>
 </main>
-
 <span id="note" class="sr-only" role="status"></span>
 <input type="file" id="svg-file" hidden accept=".svg,image/svg+xml">
 

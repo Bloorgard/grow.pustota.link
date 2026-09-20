@@ -7,6 +7,7 @@ import {
   setField, aspect, ratioLabel, at, inBounds, clipField,
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
+import { buildRail } from './ui.js';
 
 const INK = '#f1ede5';
 const PAPER = '#161616';
@@ -164,13 +165,13 @@ function ensureGrid() {
 function pushUndo() {
   undoStack.push(wallOps.slice());
   if (undoStack.length > 80) undoStack.shift();
-  document.getElementById('undo').disabled = false;
+  updateControls();
 }
 
 function undoWalls() {
   if (!undoStack.length) return;
   wallOps = undoStack.pop();
-  document.getElementById('undo').disabled = !undoStack.length;
+  updateControls();
   gridDirty = true;
   rebuildWallCanvas();
   updateGrowButton();
@@ -276,9 +277,7 @@ function scaleSVG(nextH, cx, cy) {
 
 function syncSVGScale() {
   if (!svgOverlay) return;
-  const pct = Math.round(svgOverlay.h / svgOverlay.baseH * 100);
-  document.getElementById('svg-scale').value = pct;
-  document.getElementById('svg-scale-label').textContent = `масштаб · ${pct}%`;
+  updateControls();
 }
 
 /* ===== рост ===== */
@@ -768,10 +767,8 @@ function wheel(event) {
 }
 
 function setBrush(size) {
-  const input = document.getElementById('brush-size');
-  values.brush = clamp(Math.round(size), Number(input.min), Number(input.max));
-  input.value = values.brush;
-  document.getElementById('brush-size-label').textContent = `размер · ${values.brush}`;
+  values.brush = clamp(Math.round(size), 2, 26);
+  updateControls();
   saveSoon();
 }
 
@@ -779,13 +776,8 @@ function setBrush(size) {
 
 function key(event) {
   const node = event.target;
-  if (event.key === 'Escape' && exportMenu.open) {
-    exportMenu.open = false;
-    exportMenu.querySelector('summary').focus();
-    return;
-  }
   if (event.key === 'Escape' && svgOverlay) { cancelSVG(); return; }
-  if (event.key === 'Escape' && !panel.hidden) { setPanelOpen(false); return; }
+  if (event.key === 'Escape' && panelOpen) { panelOpen = false; updateControls(); return; }
   if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
   if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
@@ -810,7 +802,7 @@ function key(event) {
   if (event.code === 'KeyR' && mode === 'grow') restartGrowth();
   if (event.code === 'KeyC' && mode === 'grow') {
     values.auto = false;
-    buildPanel();
+    updateControls();
     updateHint();
     saveSoon();
   }
@@ -818,47 +810,15 @@ function key(event) {
 
 /* ===== панель ===== */
 
-const panel = document.getElementById('panel');
-const toggleBtn = document.getElementById('toggle');
+const panel = document.getElementById('colIn');
 const hintEl = document.getElementById('hint');
-const exportMenu = document.getElementById('export-menu');
 let panelTarget = panel;
 
-document.addEventListener('pointerdown', event => {
-  if (!exportMenu.contains(event.target)) exportMenu.open = false;
-});
-
-function setPanelOpen(open) {
-  if (open) buildPanel();
-  panel.hidden = !open;
-  toggleBtn.setAttribute('aria-expanded', String(open));
-  fitCanvas();
-  if (open) {
-    panel.scrollTop = 0;
-    panel.querySelector('button').focus();
-  } else toggleBtn.focus();
-}
-
-/* Панель лежит поверх сцены, поэтому холст не пересчитывается, а лишь
-   ужимается показом — рисунок остаётся тем же. */
+/* Новое правило расчёта — задача 6. Сейчас колонка стоит в потоке,
+   поэтому холст и так центрируется в остатке сцены. */
 function fitCanvas() {
-  if (panel.hidden) {
-    canvas.style.transform = '';
-    return;
-  }
-  const st = sheet.getBoundingClientRect();
-  const pa = panel.getBoundingClientRect();
-  const gutter = 14;
-  const aside = pa.left > st.left + 1;
-  const free = aside
-    ? { w: pa.left - st.left, h: st.height, cx: (st.left + pa.left) / 2, cy: st.top + st.height / 2 }
-    : { w: st.width, h: pa.top - st.top, cx: st.left + st.width / 2, cy: (st.top + pa.top) / 2 };
-  const k = clamp(Math.min((free.w - gutter * 2) / Sx, (free.h - gutter * 2) / Sy), 0.2, 1);
-  const tx = free.cx - (st.left + st.width / 2);
-  const ty = free.cy - (st.top + st.height / 2);
-  canvas.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${k.toFixed(4)})`;
+  canvas.style.transform = '';
 }
-toggleBtn.addEventListener('click', () => setPanelOpen(panel.hidden));
 
 function makeRange(key, label, min, max, step) {
   const el = document.createElement('label');
@@ -971,7 +931,7 @@ function buildPanel() {
   title.textContent = mode === 'walls' ? 'стены' : 'характер роста';
   const close = document.createElement('button');
   close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Закрыть настройки');
-  close.addEventListener('click', () => setPanelOpen(false));
+  close.addEventListener('click', () => { panelOpen = false; updateControls(); });
   heading.append(title, close); panel.append(heading);
 
   if (mode === 'walls') {
@@ -1044,23 +1004,40 @@ function growthState() {
   return paused ? 'paused' : 'running';
 }
 
+let railWide = true;
+let panelOpen = true;
+
+function uiState() {
+  return {
+    mode, tool: brushErase ? 'eraser' : 'brush', railWide, panelOpen,
+    playing: !paused, auto: on('auto'), seeWalls: on('showWalls'),
+    speed: num('speed'), canUndo: undoStack.length > 0, canGrow: wallsPresent || !!growth,
+    placingSVG: !!svgOverlay, growthState: growthState(),
+  };
+}
+
+function openSavePopover() { exportPNG(); }
+
+const actions = {
+  setMode, setTool: t => { brushErase = t === 'eraser'; updateControls(); },
+  undo: undoWalls, importSVG: () => document.getElementById('svg-file').click(),
+  clearWalls, applySVG, cancelSVG, togglePause, restart: restartGrowth,
+  setSpeed: v => { values.speed = v; updateControls(); saveSoon(); },
+  toggleAuto: () => { values.auto = !values.auto; wake(); updateControls(); saveSoon(); },
+  toggleWalls: () => { values.showWalls = !values.showWalls; updateControls(); saveSoon(); },
+  togglePanel: () => { panelOpen = !panelOpen; updateControls(); fitCanvas(); saveSoon(); },
+  save: () => openSavePopover(),
+  toggleRail: () => { railWide = !railWide; updateControls(); fitCanvas(); saveSoon(); },
+};
+
 function updateControls() {
-  const placing = !!svgOverlay;
-  document.getElementById('wall-tools').hidden = placing || mode !== 'walls';
-  document.getElementById('grow-tools').hidden = placing || mode !== 'grow';
-  document.getElementById('svg-tools').hidden = !placing;
-  const pause = document.getElementById('pause');
-  pause.textContent = paused ? 'продолжить' : 'пауза';
-  pause.setAttribute('aria-pressed', String(paused));
+  buildRail(document.getElementById('rail'), uiState(), actions);
+  document.getElementById('col').hidden = !panelOpen;
+  if (panelOpen) buildPanel();
   const note = document.getElementById('note');
   note.textContent = svgOverlay
     ? 'размещение SVG'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
-  for (const [id, active] of [['brush', !brushErase], ['eraser', brushErase]]) {
-    const button = document.getElementById(id);
-    button.classList.toggle('btn-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  }
 }
 
 function setMode(newMode) {
@@ -1073,17 +1050,12 @@ function setMode(newMode) {
   if (newMode === 'grow' && !wallsPresent && !growth) return;
   release();
   mode = newMode;
-  for (const btn of document.querySelectorAll('#modes button')) {
-    btn.classList.toggle('active', btn.dataset.mode === newMode);
-    btn.setAttribute('aria-pressed', String(btn.dataset.mode === newMode));
-  }
   if (newMode === 'grow' && !growth) {
     values.showWalls = false;
     values.auto = true;
     startGrowth();
   }
   debt = 0;
-  if (!panel.hidden) buildPanel();
   updateControls();
   updateHint();
 }
@@ -1101,7 +1073,7 @@ function updateHint() {
   ensureGrid();
   if (mode === 'walls' && wallsPresent && !growth) {
     hintEl.hidden = false;
-    hintEl.textContent = 'готово — включите «рост» в шапке';
+    hintEl.textContent = 'готово — включите «рост» слева';
     return;
   }
   hintEl.hidden = true;
@@ -1109,11 +1081,7 @@ function updateHint() {
 
 function updateGrowButton() {
   ensureGrid();
-  const growBtn = document.querySelector('#modes button[data-mode="grow"]');
-  const ready = wallsPresent || !!growth;
-  growBtn.disabled = !ready;
-  growBtn.title = ready ? 'Рост' : 'Сначала нарисуйте стены';
-  document.getElementById('undo').disabled = !undoStack.length;
+  updateControls();
   updateHint();
 }
 
@@ -1172,33 +1140,6 @@ function load() {
 
 /* ===== события ===== */
 
-document.querySelectorAll('#modes button').forEach(btn => {
-  btn.addEventListener('click', () => setMode(btn.dataset.mode));
-});
-document.getElementById('brush').addEventListener('click', () => { brushErase = false; updateControls(); });
-document.getElementById('eraser').addEventListener('click', () => { brushErase = true; updateControls(); });
-document.getElementById('brush-size').addEventListener('input', e => setBrush(e.target.value));
-document.getElementById('undo').addEventListener('click', undoWalls);
-document.getElementById('import').addEventListener('click', () => document.getElementById('svg-file').click());
-document.getElementById('pause').addEventListener('click', togglePause);
-document.getElementById('restart').addEventListener('click', restartGrowth);
-document.getElementById('svg-apply').addEventListener('click', applySVG);
-document.getElementById('svg-cancel').addEventListener('click', cancelSVG);
-document.getElementById('svg-scale').addEventListener('input', e => {
-  const o = svgOverlay;
-  if (!o) return;
-  scaleSVG(o.baseH * Number(e.target.value) / 100, o.x + overlayWidth(o) / 2, o.y + o.h / 2);
-});
-document.getElementById('export-png').addEventListener('click', () => {
-  exportPNG();
-  exportMenu.open = false;
-  exportMenu.querySelector('summary').focus();
-});
-document.getElementById('export-svg').addEventListener('click', () => {
-  exportSVG();
-  exportMenu.open = false;
-  exportMenu.querySelector('summary').focus();
-});
 document.getElementById('svg-file').addEventListener('change', e => {
   const file = e.target.files[0];
   if (file) loadSVG(file);
