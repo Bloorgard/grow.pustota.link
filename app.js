@@ -923,15 +923,15 @@ function updateControls(force = false) {
   note.textContent = svgOverlay
     ? 'размещение SVG'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
+  const narrow = matchMedia('(max-width: 720px)').matches;
   const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG,
-               s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls].join('|');
+               s.canUndo, s.canGrow, s.growthState, s.auto, s.seeWalls, narrow].join('|');
   if (!force && sig === lastSig) { patchTempo(s); return; }
   lastSig = sig;
   buildRail(document.getElementById('rail'), s, actions);
   document.getElementById('col').className = 'col' + (panelOpen ? ' open' : '');
   buildSettings(document.getElementById('colIn'), mode, values, actions, svgOverlay);
 
-  const narrow = matchMedia('(max-width: 720px)').matches;
   if (narrow) {
     buildBar(document.getElementById('bar'), s, actions);
     const ms = document.getElementById('msheet');
@@ -1201,6 +1201,10 @@ new ResizeObserver(() => {
   fitCanvas(narrow && panelOpen ? document.getElementById('msheet').offsetHeight : 0);
 }).observe(document.getElementById('stage'));
 addEventListener('resize', resize);
+/* resize() уже пересчитывает холст при любом ресайзе окна, но подпись sig
+   в updateControls() перестраивает оболочку только при пересечении границы
+   720px, а не на каждый пиксель — слушаем именно смену медиазапроса. */
+matchMedia('(max-width: 720px)').addEventListener('change', () => updateControls(true));
 resize();
 updateControls();
 updateGrowButton();
