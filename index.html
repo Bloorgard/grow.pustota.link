@@ -55,7 +55,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 .settings .seg { display: flex; gap: 4px; margin-bottom: 10px; }
 .settings .seg button { flex: 1; height: 30px; border: 1px solid var(--border); border-radius: 5px;
   background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px;
-  transition: background .12s, color .12s, border-color .12s; }
+  white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
 .settings .seg button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .settings .fmt { display: flex; gap: 5px; margin-bottom: 10px; }
 .settings .fmt button { width: 38px; height: 32px; border: 1px solid var(--border); border-radius: 5px;
@@ -107,7 +107,7 @@ main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
   overflow: hidden; background: var(--bg); border-right: 1px solid var(--border);
   transition: width var(--t) var(--ease);
 }
-.rail.wide { width: 176px; }
+.rail.wide { width: 172px; }
 .rail .spacer { flex: 1; min-height: 8px; }
 .rail hr { border: 0; border-top: 1px solid var(--border); margin: 6px 2px; flex: none; }
 .cap { position: relative; height: 22px; flex: none; display: flex; align-items: center; padding-left: 8px; }

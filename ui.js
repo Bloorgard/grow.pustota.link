@@ -93,7 +93,10 @@ export function buildBar(root, s, a) {
   const tools = document.createElement('div');
   tools.className = 'tools';
   const add = (n, l, o) => tools.append(barButton(n, l, o));
-  if (s.mode === 'walls') {
+  if (s.placingSVG) {
+    add('check', 'применить SVG', { on: true, click: a.applySVG });
+    add('undo', 'отменить SVG', { ghost: true, click: a.cancelSVG });
+  } else if (s.mode === 'walls') {
     add('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') });
     add('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') });
     add('undo', 'отменить', { ghost: true, disabled: !s.canUndo, click: a.undo });
@@ -104,7 +107,7 @@ export function buildBar(root, s, a) {
     add('auto', 'растить само', { on: s.auto, click: a.toggleAuto });
   }
   root.append(tools);
-  root.append(barButton('settings', 'настройки', { on: s.panelOpen, click: a.togglePanel }));
+  root.append(barButton('settings', 'настройки', { on: s.panelOpen, act: 'settings', click: a.togglePanel }));
   root.append(barButton('save', 'сохранить', { ghost: true, act: 'save', click: a.save }));
 }
 
@@ -128,8 +131,7 @@ export function buildQuick(root, s, a) {
     row.innerHTML = `<button data-q="svg">${icon('svg')}вставить SVG</button>`
       + `<button data-q="clear">${icon('clear')}очистить</button>`;
   } else {
-    row.innerHTML = `<button data-q="eye">${icon(s.seeWalls ? 'eye' : 'eye-off')}стены</button>`
-      + `<button data-q="tempo">${icon('auto')}темп</button>`;
+    row.innerHTML = `<button data-q="eye">${icon(s.seeWalls ? 'eye' : 'eye-off')}стены</button>`;
   }
   row.addEventListener('click', e => {
     const q = e.target.closest('[data-q]')?.dataset.q;
@@ -165,6 +167,7 @@ const COARSE = matchMedia('(pointer: coarse)').matches;
 function field(label, key, value, min, max, step, a) {
   const l = document.createElement('label');
   l.className = 'field';
+  l.dataset.key = key;
   l.innerHTML = `<span>${label} · ${value}</span>`
     + `<input type="range" min="${min}" max="${max}" step="${step}" value="${value}">`;
   const cap = l.querySelector('span'), input = l.querySelector('input');
@@ -204,9 +207,14 @@ export function buildSettings(root, mode, values, a, svg) {
     const l = document.createElement('label');
     l.className = 'field';
     const pct = Math.round(svg.h / svg.baseH * 100);
+    l.dataset.key = 'svgscale';
     l.innerHTML = `<span>масштаб · ${pct}%</span>`
       + `<input type="range" min="10" max="500" step="1" value="${pct}">`;
-    l.querySelector('input').addEventListener('input', e => a.setSVGScale(Number(e.target.value)));
+    const scaleCap = l.querySelector('span'), scaleInput = l.querySelector('input');
+    scaleInput.addEventListener('input', e => {
+      a.setSVGScale(Number(e.target.value));
+      scaleCap.textContent = `масштаб · ${e.target.value}%`;
+    });
     root.append(l);
     return;
   }

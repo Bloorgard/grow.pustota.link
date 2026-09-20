@@ -72,6 +72,10 @@ function applyField(nextShape, nextProportion) {
     growth.grown = new Uint8Array(GX * GY);
     rebuildGrowthMask();
   }
+  if (previousGrowth) {
+    previousGrowth.grown = new Uint8Array(GX * GY);
+    rebuildMask(previousGrowth);
+  }
 }
 
 /* ===== стены: штрихи ===== */
@@ -275,9 +279,17 @@ function scaleSVG(nextH, cx, cy) {
   syncSVGScale();
 }
 
+/* Точечная синхронизация: полная пересборка колонки здесь стёрла бы фокус
+   и структуру не меняет, поэтому подпись и value ползунка правим напрямую. */
 function syncSVGScale() {
   if (!svgOverlay) return;
-  updateControls();
+  const pct = Math.round(svgOverlay.h / svgOverlay.baseH * 100);
+  for (const root of [document.getElementById('colIn'), document.getElementById('msheet')]) {
+    const f = root?.querySelector('.field[data-key="svgscale"]');
+    if (!f) continue;
+    f.querySelector('input').value = pct;
+    f.querySelector('span').textContent = `масштаб · ${pct}%`;
+  }
 }
 
 /* ===== рост ===== */
@@ -287,14 +299,15 @@ let previousGrowth = null;
 const pointer = { x: -1, y: -1, id: null, down: false };
 let wallDrawing = false;
 
-function claim(x, y) {
+function claim(x, y, mask) {
+  const g = mask || growth.grown;
   const r = Math.max(1, Math.round(num('gap') * GY));
   const ci = Math.round(x * GX), cj = Math.round(y * GY);
   for (let j = cj - r; j <= cj + r; j += 1) {
     for (let i = ci - r; i <= ci + r; i += 1) {
       if (i < 0 || j < 0 || i >= GX || j >= GY) continue;
       if ((i - ci) ** 2 + (j - cj) ** 2 > r * r) continue;
-      growth.grown[j * GX + i] = 1;
+      g[j * GX + i] = 1;
     }
   }
 }
@@ -408,12 +421,18 @@ function startGrowth() {
 
 function rebuildGrowthMask() {
   if (!growth) return;
-  growth.grown.fill(0);
-  for (const seg of growth.segments) {
-    claim(seg.x1, seg.y1);
-    claim(seg.x2, seg.y2);
+  rebuildMask(growth);
+}
+
+/* Пересчитывает маску занятости для роста g (текущего или отложенного) —
+   нужна и для growth, и для previousGrowth при смене формы/пропорции холста. */
+function rebuildMask(g) {
+  g.grown.fill(0);
+  for (const seg of g.segments) {
+    claim(seg.x1, seg.y1, g.grown);
+    claim(seg.x2, seg.y2, g.grown);
   }
-  for (const tip of growth.tips) claim(tip.x, tip.y);
+  for (const tip of g.tips) claim(tip.x, tip.y, g.grown);
 }
 
 function restartGrowth() {
@@ -769,7 +788,21 @@ function wheel(event) {
 function setBrush(size) {
   values.brush = clamp(Math.round(size), 2, 26);
   updateControls();
+  syncBrushSlider();
   saveSoon();
+}
+
+/* Точечная синхронизация: значения values.* не входят в подпись структуры,
+   поэтому колесо мыши и долгий тап на телефоне не поднимают ползунок в
+   колонке/листе сами — правим его value и подпись напрямую, без пересборки. */
+function syncBrushSlider() {
+  for (const root of [document.getElementById('colIn'), document.getElementById('msheet')]) {
+    const f = root?.querySelector('.field[data-key="brush"]');
+    if (!f) continue;
+    f.querySelector('input').value = num('brush');
+    const span = f.querySelector('span');
+    span.textContent = span.textContent.replace(/·.*/, `· ${num('brush')}`);
+  }
 }
 
 /* ===== клавиши ===== */
@@ -804,12 +837,7 @@ function key(event) {
     event.preventDefault(); togglePause();
   }
   if (event.code === 'KeyR' && mode === 'grow') restartGrowth();
-  if (event.code === 'KeyC' && mode === 'grow') {
-    values.auto = false;
-    updateControls();
-    updateHint();
-    saveSoon();
-  }
+  if (event.code === 'KeyC' && mode === 'grow') actions.toggleAuto();
 }
 
 /* ===== панель ===== */
@@ -880,7 +908,21 @@ function openSavePopover() {
 }
 
 document.addEventListener('pointerdown', e => {
-  if (popover && !popover.contains(e.target) && !e.target.closest('#rail button.t, #bar button.t')) closePopover();
+  if (popover && !popover.contains(e.target)
+      && !e.target.closest('#rail button.t[data-act="save"], #bar button.t[data-act="save"]')) closePopover();
+});
+
+/* Лист настроек на телефоне закрывается касанием вне листа и вне полосы —
+   preventDefault/stopPropagation здесь нет, чтобы не съесть событие,
+   которым в тот же момент может начинаться штрих на холсте. */
+document.addEventListener('pointerdown', e => {
+  if (!panelOpen || !matchMedia('(max-width: 720px)').matches) return;
+  const ms = document.getElementById('msheet');
+  if (ms.contains(e.target) || e.target.closest('#bar')) return;
+  panelOpen = false;
+  updateControls(true);
+  fitCanvas();
+  saveSoon();
 });
 
 const actions = {
@@ -955,7 +997,9 @@ function updateControls(force = false) {
 /* Закрытие колонки клавишей или кнопкой не должно ронять фокус на body:
    рейка перестраивается заново, поэтому ищем кнопку уже после сборки. */
 function focusSettingsBtn() {
-  document.querySelector('#rail button[data-act="settings"]')?.focus();
+  for (const b of document.querySelectorAll('#rail button[data-act="settings"], #bar button[data-act="settings"]')) {
+    if (b.offsetParent !== null) { b.focus(); return; }
+  }
 }
 
 function patchTempo(s) {
@@ -1185,6 +1229,7 @@ document.getElementById('bar').addEventListener('click', e => {
 document.getElementById('brushpop').addEventListener('input', e => {
   actions.setValue('brush', Number(e.target.value));
   document.getElementById('bpval').textContent = e.target.value;
+  syncBrushSlider();
 });
 document.addEventListener('pointerdown', e => {
   const pop = document.getElementById('brushpop');
