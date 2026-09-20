@@ -3,8 +3,8 @@
    Стены хранятся как векторные штрихи: сетка нужна только для столкновений. */
 
 import {
-  GRID_BASE, EDGE, AR, GX, GY, shape, proportion,
-  setField, aspect, ratioLabel, at, inBounds, clipField,
+  GRID_BASE, AR, GX, GY, shape, proportion,
+  setField, aspect, at, inBounds, clipField,
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
 import { buildRail, buildSettings, buildBar, buildQuick } from './ui.js';
@@ -25,6 +25,7 @@ const EXPORT_LONG_SIDE = 2048;
 const STORE_KEY = 'grow.pustota.v1';
 
 const canvas = document.getElementById('canvas');
+const sheet = document.getElementById('sheet');
 const ctx = canvas.getContext('2d');
 let Sx = 600, Sy = 600, dpr = 1;
 let last = performance.now(), debt = 0;
@@ -778,7 +779,7 @@ function key(event) {
   if (event.key === 'Escape') {
     if (popover) { closePopover(); return; }
     if (svgOverlay) { cancelSVG(); return; }
-    if (panelOpen) { panelOpen = false; updateControls(); fitCanvas(); saveSoon(); return; }
+    if (panelOpen) { panelOpen = false; updateControls(); fitCanvas(); saveSoon(); focusSettingsBtn(); return; }
     return;
   }
   if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -823,7 +824,7 @@ function fitCanvas(occupied = 0) {
   const freeH = Math.max(80, stage.clientHeight - occupied);
   const k = Math.min(1, (stage.clientWidth - GUTTER * 2) / Sx, (freeH - GUTTER * 2) / Sy);
   const ty = -(stage.clientHeight - freeH) / 2;
-  canvas.style.transform = `translateY(${ty.toFixed(1)}px) scale(${k.toFixed(4)})`;
+  sheet.style.transform = `translateY(${ty.toFixed(1)}px) scale(${k.toFixed(4)})`;
 }
 
 /* ===== состояние интерфейса ===== */
@@ -889,7 +890,13 @@ const actions = {
   setSpeed: v => { values.speed = v; updateControls(); saveSoon(); },
   toggleAuto: () => { values.auto = !values.auto; wake(); updateControls(); saveSoon(); },
   toggleWalls: () => { values.showWalls = !values.showWalls; updateControls(); saveSoon(); },
-  togglePanel: () => { panelOpen = !panelOpen; updateControls(true); fitCanvas(); saveSoon(); },
+  togglePanel: () => {
+    panelOpen = !panelOpen;
+    updateControls(true);
+    fitCanvas();
+    saveSoon();
+    if (!panelOpen) focusSettingsBtn();
+  },
   save: () => openSavePopover(),
   toggleRail: () => { railWide = !railWide; updateControls(true); fitCanvas(); saveSoon(); },
   setValue: (key, v) => {
@@ -899,10 +906,10 @@ const actions = {
   },
   /* Смена формы — по клику, не по протяжке: полная пересборка колонки здесь
      уместна и нужна, чтобы подсветка кнопки и пересчёт холста не разошлись. */
-  setShape: s => { applyField(s, proportion); resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true); saveSoon(); },
+  setShape: s => { applyField(s, proportion); values.shape = shape; resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(true); saveSoon(); },
   /* Пропорция меняется протяжкой ползунка: полная пересборка колонки здесь
      вырвала бы фокус из-под курсора, поэтому подпись обновляет сам ui.js. */
-  setProportion: p => { applyField(shape, p); resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(); saveSoon(); },
+  setProportion: p => { applyField(shape, p); values.proportion = proportion; resize(); rebuildWallCanvas(); updateGrowButton(); updateControls(); saveSoon(); },
   applyPreset: name => { Object.assign(values, PRESETS[name]); rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
   resetGrowth: () => { for (const k of GROWTH_KEYS) values[k] = DEFAULTS[k]; rebuildGrowthMask(); wake(); updateControls(true); saveSoon(); },
   setSVGScale: pct => {
@@ -943,6 +950,12 @@ function updateControls(force = false) {
   } else {
     fitCanvas();
   }
+}
+
+/* Закрытие колонки клавишей или кнопкой не должно ронять фокус на body:
+   рейка перестраивается заново, поэтому ищем кнопку уже после сборки. */
+function focusSettingsBtn() {
+  document.querySelector('#rail button[data-act="settings"]')?.focus();
 }
 
 function patchTempo(s) {
@@ -1064,7 +1077,9 @@ function load() {
     };
     img.src = op.src;
   }
-  if (!pending) { rebuildWallCanvas(); updateGrowButton(); }
+  /* Холст экрана пересобирает resize() ниже по инициализации — здесь он
+     всё равно ещё в размере по умолчанию, пересобирать дважды незачем. */
+  if (!pending) updateGrowButton();
 }
 
 /* ===== события ===== */

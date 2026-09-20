@@ -65,7 +65,7 @@ export function buildRail(root, s, a) {
   const sp = document.createElement('div');
   sp.className = 'spacer';
   root.append(sp);
-  root.append(button('settings', 'настройки', { on: s.panelOpen, click: a.togglePanel }));
+  root.append(button('settings', 'настройки', { on: s.panelOpen, act: 'settings', click: a.togglePanel }));
   root.append(button('save', 'сохранить', { ghost: true, act: 'save', click: a.save }));
   root.append(rule());
   root.append(button(s.railWide ? 'fold' : 'unfold', s.railWide ? 'свернуть' : 'развернуть',

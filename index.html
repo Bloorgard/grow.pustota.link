@@ -76,10 +76,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex;
   align-items: center; justify-content: center; background: var(--stage); }
-.sheet { position: relative; flex: none; display: flex; }
-#canvas { display: block; cursor: crosshair; touch-action: none; background: var(--bg);
-  border: 1px solid var(--edge); box-shadow: 0 14px 44px #000a;
+.sheet { position: relative; flex: none; display: flex;
   transform-origin: center; transition: transform var(--t) var(--ease); }
+#canvas { display: block; cursor: crosshair; touch-action: none; background: var(--bg);
+  border: 1px solid var(--edge); box-shadow: 0 14px 44px #000a; }
 .popover { position: absolute; z-index: 9; display: flex; gap: 4px; padding: 5px;
   border: 1px solid var(--border); border-radius: 8px; background: #1c1c1bf5;
   backdrop-filter: blur(8px); box-shadow: 0 10px 28px #000a; }
@@ -119,11 +119,12 @@ main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .rail.wide .cap b { opacity: 1; transition-delay: .07s; }
 .rail.wide .cap i { opacity: 0; }
 button.t {
-  display: flex; align-items: center; gap: 10px; height: 34px; flex: none; padding: 0 8px;
+  display: flex; align-items: center; gap: 10px; height: 34px; min-height: 34px; flex: none; padding: 0 8px;
   border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fg);
   cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; overflow: hidden;
   transition: background .12s ease, color .12s ease;
 }
+.rail button:focus-visible { outline-offset: -2px; }
 button.t:hover:not(:disabled) { background: #2c2c29; }
 button.t:disabled { opacity: .35; cursor: default; }
 button.t.on { background: var(--fg); color: var(--bg); }
@@ -151,7 +152,7 @@ button.t.on .k { color: #5a5a55; }
     height: calc(58px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
     background: var(--bg); border-top: 1px solid var(--border); z-index: 3; }
   .bar .modeseg { display: flex; flex: none; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
-  .bar .modeseg button { width: 44px; height: 42px; border: 0; background: transparent; color: var(--muted);
+  .bar .modeseg button { width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted);
     cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
   .bar .modeseg button.on { background: var(--fg); color: var(--bg); }
   .bar .tools { display: flex; gap: 4px; flex: 1; justify-content: center; }
@@ -176,6 +177,9 @@ button.t.on .k { color: #5a5a55; }
   .brushpop input { flex: 1; accent-color: var(--fg); }
 }
 @media (min-width: 721px) { .bar, .msheet, .brushpop { display: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
 </style>
 </head>
 <body>
@@ -203,7 +207,7 @@ button.t.on .k { color: #5a5a55; }
 
 <main>
   <nav class="rail" id="rail" aria-label="Инструменты"></nav>
-  <div class="col" id="col"><div class="col-in settings" id="colIn"></div></div>
+  <div class="col" id="col" role="complementary" aria-label="Настройки"><div class="col-in settings" id="colIn"></div></div>
   <div class="stage" id="stage">
     <div class="sheet" id="sheet">
       <canvas id="canvas" aria-label="Холст для рисования стен и выращивания узора"></canvas>
