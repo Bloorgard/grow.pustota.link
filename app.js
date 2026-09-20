@@ -355,7 +355,19 @@ function applySVG() {
   showMessage();
   const o = svgOverlay;
   pushUndo();
-  wallOps.push({ k: 'svg', src: o.src, img: o.img, x: o.x, y: o.y, w: overlayWidth(o), h: o.h });
+  /* Запекаем один раз: дальше картинка живёт как обычная вставленная —
+     её двигает ладошка, масштабирует ползунок рисунка, отменяет ⌘Z.
+     В op.img кладётся холст (рисуется сразу, ждать загрузки не надо),
+     в op.src — data-URL для хранилища и SVG-экспорта. */
+  const baked = o.mode === 'luma'
+    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide: PREVIEW_BAKE })
+    : null;
+  wallOps.push({
+    k: 'svg',
+    src: baked ? toPNG(baked) : o.src,
+    img: baked || o.img,
+    x: o.x, y: o.y, w: overlayWidth(o), h: o.h,
+  });
   wallsChanged = true;
   svgOverlay = null;
   gridDirty = true;
