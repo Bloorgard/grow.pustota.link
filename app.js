@@ -37,7 +37,7 @@ let hasInteracted = false;
 const DEFAULTS = {
   auto: true, showWalls: false,
   speed: 8, mass: 5, branch: 5, seeds: 7, crowd: 12,
-  sow: 1, gap: 0.007, step: 0.009,
+  sow: 0, gap: 0.007, step: 0.009,
   wander: 1, straight: 0.14, pull: 0.55, life: 3,
   shape: 'rect', proportion: 0, brush: 6,
 };
@@ -322,7 +322,7 @@ function sprout(x, y, anyWall = false) {
       const distance = distOf(x, y, px, py);
       if (!closest || distance < closest.distance) closest = { x: px, y: py, distance };
     }
-    if (!closest) return;
+    if (!closest) return false;
     x = closest.x; y = closest.y;
   }
   for (let n = 0; n < 900; n += 1) {
@@ -337,8 +337,9 @@ function sprout(x, y, anyWall = false) {
     if (where === 1 && !nearWall(px, py, false)) continue;
     claim(px, py);
     growth.tips.push(makeTip(px, py, anyWall ? a : angleTo(px, py, x, y)));
-    return;
+    return true;
   }
+  return false;
 }
 
 function makeTip(x, y, a, life) {
@@ -352,13 +353,15 @@ function makeTip(x, y, a, life) {
 }
 
 function feed(x, y) {
-  if (!inBounds(x, y)) return;
+  if (!inBounds(x, y)) return false;
+  let any = false;
   if (nearWall(x, y, false)) {
-    for (let i = 0; i < num('seeds'); i += 1) sprout(x, y, true);
+    for (let i = 0; i < num('seeds'); i += 1) if (sprout(x, y, true)) any = true;
   }
   growth.food.push({ x, y, age: 0 });
   if (growth.food.length > 9) growth.food.shift();
-  for (let i = 0; i < num('seeds'); i += 1) sprout(x, y);
+  for (let i = 0; i < num('seeds'); i += 1) if (sprout(x, y)) any = true;
+  return any;
 }
 
 function grow(tip, index) {
@@ -400,6 +403,7 @@ function startGrowth() {
     tips: [], segments: [], food: [],
     time: 0, autoAt: 0.35, trail: null, leading: false, tipSeq: 0,
     surface: null, surfaceW: 0, surfaceH: 0,
+    done: false, idle: 0, misses: 0,
   };
 }
 
@@ -415,6 +419,7 @@ function rebuildGrowthMask() {
 
 function restartGrowth() {
   if (mode !== 'grow') return;
+  wake();
   release();
   if (growth?.segments.length) previousGrowth = growth;
   startGrowth();
@@ -422,20 +427,6 @@ function restartGrowth() {
   debt = 0;
   updateControls();
   updateHint();
-}
-
-function restoreGrowth() {
-  if (!previousGrowth) return;
-  release();
-  growth = previousGrowth;
-  previousGrowth = null;
-  growth.surface = null;
-  rebuildGrowthMask();
-  paused = true;
-  debt = 0;
-  updateControls();
-  updateHint();
-  document.getElementById('pause').focus();
 }
 
 /* ===== поверхность роста ===== */
@@ -472,6 +463,7 @@ function growStep() {
   if (!growth) return;
   ensureGrid();
   const m = growth;
+  if (m.done) return;
   m.time += STEP;
   if (on('auto')) {
     m.autoAt -= STEP;
@@ -480,11 +472,11 @@ function growStep() {
       let y = 0.08 + Math.random() * 0.84;
       for (let tries = 0; tries < 20; tries += 1) {
         const k = at(x, y);
-        if (k >= 0 && !walls[k]) break;
+        if (k >= 0 && !walls[k] && inBounds(x, y)) break;
         x = 0.08 + Math.random() * 0.84;
         y = 0.08 + Math.random() * 0.84;
       }
-      feed(x, y);
+      if (feed(x, y)) m.misses = 0; else m.misses += 1;
       m.autoAt = lerp(5, 0.3, (num('speed') - 1) / 15);
     }
   }
@@ -509,6 +501,14 @@ function growStep() {
     const tip = m.tips[index];
     if (!tip) continue;
     grow(tip, index);
+  }
+  /* Сажать больше некуда и живых кончиков нет — рост закончился. */
+  if (m.tips.length === 0 && (m.misses >= 3 || !on('auto'))) m.idle += STEP;
+  else m.idle = 0;
+  if (m.idle > 1.5 && m.segments.length) {
+    m.done = true;
+    paused = true;
+    updateControls();
   }
   if (m.segments.length > MAX_SEGMENTS) {
     m.segments.splice(0, m.segments.length - MAX_SEGMENTS);
@@ -688,7 +688,7 @@ function svgHit(x, y) {
 }
 
 function down(event) {
-  if (pointer.id !== null || (mode === 'grow' && paused)) return;
+  if (pointer.id !== null || (mode === 'grow' && paused && !growth?.done)) return;
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   track(event);
   if (pointer.x < 0 || pointer.x > 1 || pointer.y < 0 || pointer.y > 1) return;
@@ -713,6 +713,7 @@ function down(event) {
     updateHint();
   } else {
     growth.leading = true;
+    wake();
     feed(pointer.x, pointer.y);
   }
 }
@@ -786,8 +787,21 @@ function key(event) {
   if (event.key === 'Escape' && svgOverlay) { cancelSVG(); return; }
   if (event.key === 'Escape' && !panel.hidden) { setPanelOpen(false); return; }
   if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
-  if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey) && mode === 'walls') {
-    event.preventDefault(); undoWalls(); return;
+  if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    if (mode === 'walls') undoWalls();
+    else if (previousGrowth) {
+      release();
+      growth = previousGrowth;
+      previousGrowth = null;
+      growth.surface = null;
+      growth.done = false;
+      rebuildGrowthMask();
+      paused = true;
+      debt = 0;
+      updateControls();
+    }
+    return;
   }
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
   if (event.code === 'Space' && !node?.closest('button') && mode === 'grow') {
@@ -855,6 +869,7 @@ function makeRange(key, label, min, max, step) {
   const paint = () => { caption.textContent = `${label} · ${values[key]}`; };
   input.addEventListener('input', () => {
     values[key] = Number(input.value);
+    wake();
     paint();
     saveSoon();
   });
@@ -870,7 +885,7 @@ function makeToggle(key, label) {
     btn.textContent = `${label} · ${values[key] ? 'да' : 'нет'}`;
     btn.setAttribute('aria-pressed', String(values[key]));
   };
-  btn.addEventListener('click', () => { values[key] = !values[key]; paint(); updateHint(); saveSoon(); });
+  btn.addEventListener('click', () => { values[key] = !values[key]; wake(); paint(); updateHint(); saveSoon(); });
   paint(); panelTarget.append(btn);
 }
 
@@ -889,6 +904,7 @@ function makePick(key, label, options, after) {
     btn.setAttribute('aria-pressed', String(i === getIdx()));
     btn.addEventListener('click', () => {
       values[key] = typeof values[key] === 'number' ? i : opt;
+      wake();
       wrap.querySelectorAll('button').forEach((b, j) => {
         b.className = j === i ? 'btn-active' : '';
         b.setAttribute('aria-pressed', String(j === i));
@@ -1022,6 +1038,12 @@ function buildPanel() {
 
 /* ===== состояние интерфейса ===== */
 
+function growthState() {
+  if (mode === 'walls') return 'walls';
+  if (growth?.done) return 'done';
+  return paused ? 'paused' : 'running';
+}
+
 function updateControls() {
   const placing = !!svgOverlay;
   document.getElementById('wall-tools').hidden = placing || mode !== 'walls';
@@ -1030,9 +1052,8 @@ function updateControls() {
   const pause = document.getElementById('pause');
   pause.textContent = paused ? 'продолжить' : 'пауза';
   pause.setAttribute('aria-pressed', String(paused));
-  document.getElementById('restore').hidden = !previousGrowth;
   const note = document.getElementById('note');
-  note.textContent = placing ? 'размещение SVG' : mode === 'walls' ? 'рисование' : paused ? 'на паузе' : 'растёт';
+  note.textContent = { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   for (const [id, active] of [['brush', !brushErase], ['eraser', brushErase]]) {
     const button = document.getElementById(id);
     button.classList.toggle('btn-active', active);
@@ -1055,7 +1076,8 @@ function setMode(newMode) {
     btn.setAttribute('aria-pressed', String(btn.dataset.mode === newMode));
   }
   if (newMode === 'grow' && !growth) {
-    values.showWalls = true;
+    values.showWalls = false;
+    values.auto = true;
     startGrowth();
   }
   debt = 0;
@@ -1158,7 +1180,6 @@ document.getElementById('undo').addEventListener('click', undoWalls);
 document.getElementById('import').addEventListener('click', () => document.getElementById('svg-file').click());
 document.getElementById('pause').addEventListener('click', togglePause);
 document.getElementById('restart').addEventListener('click', restartGrowth);
-document.getElementById('restore').addEventListener('click', restoreGrowth);
 document.getElementById('svg-apply').addEventListener('click', applySVG);
 document.getElementById('svg-cancel').addEventListener('click', cancelSVG);
 document.getElementById('svg-scale').addEventListener('input', e => {
@@ -1203,6 +1224,15 @@ function togglePause() {
   release();
   paused = !paused;
   debt = 0;
+  updateControls();
+}
+
+function wake() {
+  if (!growth?.done) return;
+  growth.done = false;
+  growth.idle = 0;
+  growth.misses = 0;
+  paused = false;
   updateControls();
 }
 
