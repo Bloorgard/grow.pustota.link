@@ -9,8 +9,10 @@ const lumaOf = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
 /* Уменьшенная копия: анализ и предпросмотр не должны зависеть от того,
    принесли фотографию 400 пикселей или 6000. */
 function drawScaled(img, maxSide) {
-  const iw = img.naturalWidth || img.width || 1;
-  const ih = img.naturalHeight || img.height || 1;
+  /* 300 — запасной размер, согласованный со старым путём в app.js
+     (там же подставлялось 300 при отсутствии собственных размеров). */
+  const iw = img.naturalWidth || img.width || 300;
+  const ih = img.naturalHeight || img.height || 300;
   const k = Math.min(1, maxSide / Math.max(iw, ih));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(iw * k));
@@ -78,6 +80,12 @@ function boxBlur(src, w, h, radius) {
    единицы процентов и не должна уводить картинку в режим яркости. */
 const CLEAR_SHARE = 0.05;
 
+/* Единица ползунка — один пиксель на копии длиной BLUR_BASE. Копий две,
+   разного размера (предпросмотр и запекание), и без пересчёта одно и то же
+   значение размывало бы их с разной силой: предпросмотр обещал бы одно,
+   а применение давало другое. */
+const BLUR_BASE = 700;
+
 export function analyze(img) {
   const { canvas, g } = drawScaled(img, 400);
   const data = g.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -111,7 +119,8 @@ export function binarize(img, { threshold, blur = 0, invert = false, maxSide = 1
        затягивает соседние пиксели ниже порога и обрастает ложной стеной. */
     luma[i] = solid[i] ? lumaOf(data[i * 4], data[i * 4 + 1], data[i * 4 + 2]) : 255;
   }
-  const smooth = boxBlur(luma, canvas.width, canvas.height, Math.round(blur));
+  const radius = Math.round(blur * Math.max(canvas.width, canvas.height) / BLUR_BASE);
+  const smooth = boxBlur(luma, canvas.width, canvas.height, radius);
   const cut = threshold / 100 * 255;
   for (let i = 0; i < total; i += 1) {
     /* Прозрачное не становится стеной никогда, в том числе при инверсии. */

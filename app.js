@@ -293,12 +293,18 @@ const overlayWidth = o => o.h * o.ia / AR;
 const PREVIEW_SIDE = 700;
 const PREVIEW_BAKE = 1600;
 
+/* Одна развилка на оба случая: предпросмотр и запекание должны считаться
+   одинаково, иначе применение даст не то, что было видно на холсте. */
+function bakedImage(o, maxSide) {
+  return o.mode === 'luma'
+    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide })
+    : null;
+}
+
 function refreshPreview() {
   const o = svgOverlay;
   if (!o) return;
-  o.shown = o.mode === 'luma'
-    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide: PREVIEW_SIDE })
-    : o.img;
+  o.shown = bakedImage(o, PREVIEW_SIDE) || o.img;
 }
 
 /* Картинка-заготовка: SVG остаётся резким при любом масштабе, растр — нет,
@@ -341,7 +347,7 @@ function loadPicture(file) {
       refreshPreview();
       hasInteracted = true;
       syncSVGScale();
-      updateControls();
+      updateControls(true);
       updateHint();
       updateGrowButton();
     };
@@ -359,9 +365,7 @@ function applySVG() {
      её двигает ладошка, масштабирует ползунок рисунка, отменяет ⌘Z.
      В op.img кладётся холст (рисуется сразу, ждать загрузки не надо),
      в op.src — data-URL для хранилища и SVG-экспорта. */
-  const baked = o.mode === 'luma'
-    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide: PREVIEW_BAKE })
-    : null;
+  const baked = bakedImage(o, PREVIEW_BAKE);
   wallOps.push({
     k: 'svg',
     src: baked ? toPNG(baked) : o.src,
