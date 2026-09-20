@@ -74,13 +74,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visibl
 
 /* ===== сцена и холст ===== */
 main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-.stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--stage); }
-.sheet { position: relative; flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; }
-#canvas {
-  display: block; cursor: crosshair; touch-action: none; background: var(--bg);
+.stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex;
+  align-items: center; justify-content: center; background: var(--stage); }
+.sheet { position: relative; flex: none; display: flex; }
+#canvas { display: block; cursor: crosshair; touch-action: none; background: var(--bg);
   border: 1px solid var(--edge); box-shadow: 0 14px 44px #000a;
-  transform-origin: center; transition: transform .2s ease;
-}
+  transform-origin: center; transition: transform var(--t) var(--ease); }
+.popover { position: absolute; z-index: 9; display: flex; gap: 4px; padding: 5px;
+  border: 1px solid var(--border); border-radius: 8px; background: #1c1c1bf5;
+  backdrop-filter: blur(8px); box-shadow: 0 10px 28px #000a; }
+.popover button { min-height: 34px; padding: 0 12px; border: 1px solid var(--border); border-radius: 5px;
+  background: transparent; color: var(--fg); font: inherit; font-size: 12px; cursor: pointer; }
+.popover button:hover { background: #2c2c29; }
 #hint {
   position: absolute; left: 50%; bottom: 1.1rem; transform: translateX(-50%);
   max-width: min(90%, 420px); padding: .45rem .8rem; border-radius: 999px;

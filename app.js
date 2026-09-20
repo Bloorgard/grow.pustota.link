@@ -26,7 +26,6 @@ const STORE_KEY = 'grow.pustota.v1';
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const sheet = document.getElementById('sheet');
 let Sx = 600, Sy = 600, dpr = 1;
 let last = performance.now(), debt = 0;
 let paused = false;
@@ -776,8 +775,12 @@ function setBrush(size) {
 
 function key(event) {
   const node = event.target;
-  if (event.key === 'Escape' && svgOverlay) { cancelSVG(); return; }
-  if (event.key === 'Escape' && panelOpen) { panelOpen = false; updateControls(); return; }
+  if (event.key === 'Escape') {
+    if (popover) { closePopover(); return; }
+    if (svgOverlay) { cancelSVG(); return; }
+    if (panelOpen) { panelOpen = false; updateControls(); fitCanvas(); saveSoon(); return; }
+    return;
+  }
   if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
   if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
@@ -812,10 +815,15 @@ function key(event) {
 
 const hintEl = document.getElementById('hint');
 
-/* Новое правило расчёта — задача 6. Сейчас колонка стоит в потоке,
-   поэтому холст и так центрируется в остатке сцены. */
-function fitCanvas() {
-  canvas.style.transform = '';
+/* Холст центрируется в СВОБОДНОЙ части сцены, а не в сцене целиком.
+   На широком экране колонка стоит в потоке, поэтому свободная часть получается сама.
+   На телефоне лист лежит поверх — его высоту передают в occupied. */
+function fitCanvas(occupied = 0) {
+  const stage = document.getElementById('stage');
+  const freeH = Math.max(80, stage.clientHeight - occupied);
+  const k = Math.min(1, (stage.clientWidth - GUTTER * 2) / Sx, (freeH - GUTTER * 2) / Sy);
+  const ty = -(stage.clientHeight - freeH) / 2;
+  canvas.style.transform = `translateY(${ty.toFixed(1)}px) scale(${k.toFixed(4)})`;
 }
 
 /* ===== состояние интерфейса ===== */
@@ -838,7 +846,40 @@ function uiState() {
   };
 }
 
-function openSavePopover() { exportPNG(); }
+let popover = null;
+
+function closePopover() {
+  popover?.remove();
+  popover = null;
+}
+
+function openSavePopover() {
+  if (popover) { closePopover(); return; }
+  const anchor = [...document.querySelectorAll('#rail button.t')].find(b => b.dataset.act === 'save');
+  popover = document.createElement('div');
+  popover.className = 'popover';
+  popover.innerHTML = '<button data-fmt="png">PNG</button><button data-fmt="svg">SVG</button>';
+  popover.addEventListener('click', e => {
+    const f = e.target.dataset?.fmt;
+    if (!f) return;
+    closePopover();
+    if (f === 'png') exportPNG(); else exportSVG();
+  });
+  document.querySelector('main').append(popover);
+  const r = anchor.getBoundingClientRect();
+  const m = document.querySelector('main').getBoundingClientRect();
+  if (matchMedia('(max-width: 720px)').matches) {
+    popover.style.left = '8px';
+    popover.style.bottom = (m.bottom - r.top + 8) + 'px';
+  } else {
+    popover.style.left = (r.right - m.left + 8) + 'px';
+    popover.style.top = (r.top - m.top) + 'px';
+  }
+}
+
+document.addEventListener('pointerdown', e => {
+  if (popover && !popover.contains(e.target) && !e.target.closest('#rail button.t')) closePopover();
+});
 
 const actions = {
   setMode, setTool: t => { brushErase = t === 'eraser'; updateControls(); },
@@ -953,7 +994,7 @@ function save() {
     const ops = wallOps.map(op => op.k === 'svg'
       ? { k: 'svg', src: op.src, x: op.x, y: op.y, w: op.w, h: op.h }
       : { k: 'b', erase: op.erase, r: Number(op.r.toFixed(5)), pts: op.pts.map(p => [Number(p[0].toFixed(4)), Number(p[1].toFixed(4))]) });
-    localStorage.setItem(STORE_KEY, JSON.stringify({ values, ops }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ values, ops, ui: { railWide, panelOpen } }));
   } catch {
     /* переполнение хранилища — рисунок просто не переживёт перезагрузку */
   }
@@ -972,6 +1013,10 @@ function load() {
   }
   for (const k of Object.keys(DEFAULTS)) {
     if (saved.values && k in saved.values) values[k] = saved.values[k];
+  }
+  if (saved.ui) {
+    railWide = saved.ui.railWide !== false;
+    panelOpen = saved.ui.panelOpen !== false;
   }
   applyField(values.shape, values.proportion);
   wallOps = (saved.ops || []).filter(op => op.k === 'svg' ? op.src : op.pts?.length);
@@ -1037,11 +1082,14 @@ function wake() {
 /* ===== размер ===== */
 
 const GUTTER = 14;
+const RAIL_MIN = 50;
 
+/* Растр считается от максимума: рейка свёрнута, колонка закрыта.
+   Всё остальное — только масштаб показа, без пересчёта и перерисовки узора. */
 function resize() {
-  const gutter = sheet.clientWidth < 520 ? 8 : GUTTER;
-  const W = Math.max(40, sheet.clientWidth - gutter * 2);
-  const H = Math.max(40, sheet.clientHeight - gutter * 2);
+  const main = document.querySelector('main');
+  const W = Math.max(40, main.clientWidth - RAIL_MIN - GUTTER * 2);
+  const H = Math.max(40, main.clientHeight - GUTTER * 2);
   const a = aspect();
   if (W / H > a) { Sy = H; Sx = Sy * a; }
   else { Sx = W; Sy = Sx / a; }
@@ -1050,9 +1098,9 @@ function resize() {
   canvas.height = Math.round(Sy * dpr);
   canvas.style.width = Sx + 'px';
   canvas.style.height = Sy + 'px';
+  canvas.style.borderRadius = shape === 'oval' ? '50%' : '0';
   rebuildWallCanvas();
   fitCanvas();
-  canvas.style.borderRadius = shape === 'oval' ? '50%' : '0';
 }
 
 /* ===== главный цикл ===== */
@@ -1081,7 +1129,8 @@ function frame(now) {
 applyField(values.shape, values.proportion);
 load();
 setBrush(values.brush);
-new ResizeObserver(resize).observe(sheet);
+new ResizeObserver(() => fitCanvas()).observe(document.getElementById('stage'));
+addEventListener('resize', resize);
 resize();
 updateControls();
 updateGrowButton();

@@ -11,6 +11,7 @@ function button(name, label, o = {}) {
   b.type = 'button';
   b.className = 't' + (o.on ? ' on' : '') + (o.ghost ? ' ghost' : '');
   b.title = label + (o.key ? ` (${o.key})` : '');
+  if (o.act) b.dataset.act = o.act;
   b.disabled = !!o.disabled;
   if (o.on !== undefined) b.setAttribute('aria-pressed', String(!!o.on));
   b.innerHTML = icon(name) + `<span class="lbl">${label}</span>` + (o.key ? `<span class="k">${o.key}</span>` : '');
@@ -65,7 +66,7 @@ export function buildRail(root, s, a) {
   sp.className = 'spacer';
   root.append(sp);
   root.append(button('settings', 'настройки', { on: s.panelOpen, click: a.togglePanel }));
-  root.append(button('save', 'сохранить', { ghost: true, click: a.save }));
+  root.append(button('save', 'сохранить', { ghost: true, act: 'save', click: a.save }));
   root.append(rule());
   root.append(button(s.railWide ? 'fold' : 'unfold', s.railWide ? 'свернуть' : 'развернуть',
     { ghost: true, click: a.toggleRail }));
