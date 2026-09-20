@@ -37,16 +37,16 @@ export function buildRail(root, s, a) {
   root.append(rule());
 
   if (s.placingSVG) {
-    root.append(caption('разместить SVG'));
-    root.append(button('check', 'применить SVG', { on: true, click: a.applySVG }));
-    root.append(button('undo', 'отменить SVG', { ghost: true, key: 'Esc', click: a.cancelSVG }));
+    root.append(caption('разместить картинку'));
+    root.append(button('check', 'применить', { on: true, click: a.applySVG }));
+    root.append(button('undo', 'отменить', { ghost: true, key: 'Esc', click: a.cancelSVG }));
   } else if (s.mode === 'walls') {
     root.append(caption('инструмент'));
     root.append(button('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') }));
     root.append(button('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') }));
     root.append(rule());
     root.append(button('undo', 'отменить', { ghost: true, key: '⌘Z', disabled: !s.canUndo, click: a.undo }));
-    root.append(button('svg', 'вставить SVG', { ghost: true, click: a.importSVG }));
+    root.append(button('svg', 'вставить картинку', { ghost: true, click: a.importSVG }));
     root.append(button('clear', 'очистить', { ghost: true, click: a.clearWalls }));
   } else {
     root.append(caption('воспроизведение'));
@@ -54,11 +54,17 @@ export function buildRail(root, s, a) {
     root.append(button(s.playing && !done ? 'pause' : 'play',
       done ? 'готово' : s.playing ? 'пауза' : 'продолжить',
       { key: '␣', disabled: done, click: a.togglePause }));
-    root.append(button('restart', 'заново', { ghost: true, key: 'R', click: a.restart }));
+    /* Подпись контекстная: в авто очистка и правда запускает заново,
+       в ручном она просто стирает — и говорит об этом. */
+    root.append(button('restart', s.auto ? 'заново' : 'очистить рост',
+      { ghost: true, key: 'R', click: a.restart }));
     root.append(tempo(s, a));
     root.append(rule());
+    root.append(caption('источник'));
+    root.append(button('auto', 'авто-рост', { on: s.auto, key: 'C', click: () => a.setAuto(true) }));
+    root.append(button('brush', 'вручную', { on: !s.auto, click: () => a.setAuto(false) }));
+    root.append(rule());
     root.append(caption('показ'));
-    root.append(button('auto', 'растить само', { on: s.auto, key: 'C', click: a.toggleAuto }));
     root.append(button(s.seeWalls ? 'eye' : 'eye-off', 'показывать стены', { on: s.seeWalls, click: a.toggleWalls }));
   }
 
@@ -94,8 +100,8 @@ export function buildBar(root, s, a) {
   tools.className = 'tools';
   const add = (n, l, o) => tools.append(barButton(n, l, o));
   if (s.placingSVG) {
-    add('check', 'применить SVG', { on: true, click: a.applySVG });
-    add('undo', 'отменить SVG', { ghost: true, click: a.cancelSVG });
+    add('check', 'применить', { on: true, click: a.applySVG });
+    add('undo', 'отменить', { ghost: true, click: a.cancelSVG });
   } else if (s.mode === 'walls') {
     add('brush', 'кисть', { on: s.tool === 'brush', click: () => a.setTool('brush') });
     add('eraser', 'ластик', { on: s.tool === 'eraser', click: () => a.setTool('eraser') });
@@ -103,8 +109,8 @@ export function buildBar(root, s, a) {
   } else {
     const done = s.growthState === 'done';
     add(s.playing && !done ? 'pause' : 'play', done ? 'готово' : 'пауза', { disabled: done, click: a.togglePause });
-    add('restart', 'заново', { ghost: true, click: a.restart });
-    add('auto', 'растить само', { on: s.auto, click: a.toggleAuto });
+    add('restart', s.auto ? 'заново' : 'очистить рост', { ghost: true, click: a.restart });
+    add('auto', s.auto ? 'авто-рост' : 'вручную', { on: s.auto, click: () => a.setAuto(!s.auto) });
   }
   root.append(tools);
   root.append(barButton('settings', 'настройки', { on: s.panelOpen, act: 'settings', click: a.togglePanel }));
@@ -128,7 +134,7 @@ export function buildQuick(root, s, a) {
   const row = document.createElement('div');
   row.className = 'quick';
   if (s.mode === 'walls') {
-    row.innerHTML = `<button data-q="svg">${icon('svg')}вставить SVG</button>`
+    row.innerHTML = `<button data-q="svg">${icon('svg')}вставить картинку</button>`
       + `<button data-q="clear">${icon('clear')}очистить</button>`;
   } else {
     row.innerHTML = `<button data-q="eye">${icon(s.seeWalls ? 'eye' : 'eye-off')}стены</button>`;
@@ -203,7 +209,7 @@ export function buildSettings(root, mode, values, a, svg) {
   /* Размещение SVG — отдельное состояние колонки: пока оно идёт,
      остальные настройки не нужны и только мешают. */
   if (svg) {
-    root.insertAdjacentHTML('beforeend', '<h3>разместить SVG</h3>');
+    root.insertAdjacentHTML('beforeend', '<h3>разместить картинку</h3>');
     const l = document.createElement('label');
     l.className = 'field';
     const pct = Math.round(svg.h / svg.baseH * 100);

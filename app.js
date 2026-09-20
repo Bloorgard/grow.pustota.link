@@ -1,4 +1,4 @@
-/* grow.pustota.link — обрастание вокруг пользовательских стен и SVG.
+/* grow.pustota.link — обрастание вокруг нарисованных стен и вставленных картинок.
    Механика роста из буквы Ю (alphabet.pustota.link), режим «обрастание».
    Стены хранятся как векторные штрихи: сетка нужна только для столкновений. */
 
@@ -64,8 +64,32 @@ let wallsPresent = false;
 let gridDirty = true;
 const gridCanvas = document.createElement('canvas');
 
+/* Смена пропорции меняет лист, а не рисунок: нарисованное сохраняет форму
+   и остаётся по центру. Расширил холст — по бокам появилось место, сузил —
+   края ушли за обрез, но координаты целы, и возврат пропорции их вернёт. */
+function remapForAspect(from, to) {
+  if (!from || from === to) return;
+  const k = from / to;
+  const mapX = x => 0.5 + (x - 0.5) * k;
+  for (const op of wallOps) {
+    if (op.k === 'svg') { op.x = mapX(op.x); op.w *= k; continue; }
+    for (const pt of op.pts) pt[0] = mapX(pt[0]);
+  }
+  if (current) for (const pt of current.pts) pt[0] = mapX(pt[0]);
+  for (const g of [growth, previousGrowth]) {
+    if (!g) continue;
+    for (const seg of g.segments) { seg.x1 = mapX(seg.x1); seg.x2 = mapX(seg.x2); }
+    for (const tip of g.tips) tip.x = mapX(tip.x);
+    for (const food of g.food) food.x = mapX(food.x);
+    g.surface = null;
+  }
+  if (svgOverlay) svgOverlay.x = mapX(svgOverlay.x);
+}
+
 function applyField(nextShape, nextProportion) {
+  const wasAR = AR;
   setField(nextShape, nextProportion);
+  remapForAspect(wasAR, AR);
   walls = new Uint8Array(GX * GY);
   gridDirty = true;
   if (growth) {
@@ -199,29 +223,34 @@ function showMessage(text = '') {
   message.hidden = !text;
 }
 
-/* ===== загрузка SVG ===== */
+/* ===== загрузка картинки-заготовки ===== */
 
 let svgOverlay = null;
 let importVersion = 0;
 const overlayWidth = o => o.h * o.ia / AR;
 
-function loadSVG(file) {
+/* Картинка-заготовка: SVG остаётся резким при любом масштабе, растр — нет,
+   но механика одна: показ через drawImage, столкновения с теневого растра. */
+function loadPicture(file) {
   const version = ++importVersion;
+  const isSVG = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
   showMessage();
   const fail = () => {
-    if (version === importVersion) showMessage('Не удалось открыть SVG. Проверьте файл и попробуйте снова.');
+    if (version === importVersion) showMessage('Не удалось открыть файл. Подойдут SVG и PNG.');
   };
   const reader = new FileReader();
   reader.onerror = fail;
   reader.onload = () => {
     if (version !== importVersion) return;
-    const svgText = reader.result;
-    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
-    if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') {
-      fail();
-      return;
+    let src = reader.result;
+    if (isSVG) {
+      const doc = new DOMParser().parseFromString(src, 'image/svg+xml');
+      if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') {
+        fail();
+        return;
+      }
+      src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(src)));
     }
-    const src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
     const img = new Image();
     img.onerror = fail;
     img.onload = () => {
@@ -243,7 +272,7 @@ function loadSVG(file) {
     };
     img.src = src;
   };
-  reader.readAsText(file);
+  if (isSVG) reader.readAsText(file); else reader.readAsDataURL(file);
 }
 
 function applySVG() {
@@ -604,8 +633,12 @@ function exportPNG() {
   const g = tmp.getContext('2d');
   g.save();
   clipField(g, w, h);
-  g.fillStyle = PAPER;
-  g.fillRect(0, 0, w, h);
+  /* Стены сохраняются как заготовка для повторного импорта — без фона,
+     иначе при обратной загрузке весь холст станет сплошной стеной. */
+  if (mode !== 'walls') {
+    g.fillStyle = PAPER;
+    g.fillRect(0, 0, w, h);
+  }
   const showW = mode === 'walls' || on('showWalls');
   if (showW && wallOps.length) {
     const layer = document.createElement('canvas');
@@ -678,7 +711,9 @@ function exportSVG() {
   const clip = shape === 'oval' ? ' clip-path="url(#field)"' : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">`
     + (defs ? `<defs>${defs}</defs>` : '')
-    + `<g${clip}><rect width="${w}" height="${h}" fill="${PAPER}"/>` + body + '</g></svg>';
+    + `<g${clip}>`
+    + (mode === 'walls' ? '' : `<rect width="${w}" height="${h}" fill="${PAPER}"/>`)
+    + body + '</g></svg>';
   download(new Blob([svg], { type: 'image/svg+xml' }), 'svg');
 }
 
@@ -815,7 +850,7 @@ function key(event) {
     if (panelOpen) { panelOpen = false; updateControls(); fitCanvas(); saveSoon(); focusSettingsBtn(); return; }
     return;
   }
-  if (node?.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (node?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
   if (event.code === 'KeyZ' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
     if (mode === 'walls') undoWalls();
@@ -833,11 +868,11 @@ function key(event) {
     return;
   }
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
-  if (event.code === 'Space' && !node?.closest('button') && mode === 'grow') {
+  if (event.code === 'Space' && !node?.closest?.('button') && mode === 'grow') {
     event.preventDefault(); togglePause();
   }
   if (event.code === 'KeyR' && mode === 'grow') restartGrowth();
-  if (event.code === 'KeyC' && mode === 'grow') actions.toggleAuto();
+  if (event.code === 'KeyC' && mode === 'grow') actions.setAuto(!on('auto'));
 }
 
 /* ===== панель ===== */
@@ -930,7 +965,7 @@ const actions = {
   undo: undoWalls, importSVG: () => document.getElementById('svg-file').click(),
   clearWalls, applySVG, cancelSVG, togglePause, restart: restartGrowth,
   setSpeed: v => { values.speed = v; updateControls(); saveSoon(); },
-  toggleAuto: () => { values.auto = !values.auto; wake(); updateControls(); saveSoon(); },
+  setAuto: v => { values.auto = !!v; wake(); updateControls(); saveSoon(); },
   toggleWalls: () => { values.showWalls = !values.showWalls; updateControls(); saveSoon(); },
   togglePanel: () => {
     panelOpen = !panelOpen;
@@ -970,7 +1005,7 @@ function updateControls(force = false) {
   const s = uiState();
   const note = document.getElementById('note');
   note.textContent = svgOverlay
-    ? 'размещение SVG'
+    ? 'размещение картинки'
     : { walls: 'рисование', running: 'растёт', paused: 'на паузе', done: 'готово' }[growthState()];
   const narrow = matchMedia('(max-width: 720px)').matches;
   const sig = [s.mode, s.tool, s.railWide, s.panelOpen, s.placingSVG,
@@ -1024,7 +1059,7 @@ function tempoField() {
 
 function setMode(newMode) {
   if (svgOverlay && newMode === 'grow') {
-    showMessage('Сначала примените SVG или отмените его размещение.');
+    showMessage('Сначала примените картинку или отмените её размещение.');
     return;
   }
   if (newMode === mode) return;
@@ -1118,7 +1153,7 @@ function load() {
 
 document.getElementById('svg-file').addEventListener('change', e => {
   const file = e.target.files[0];
-  if (file) loadSVG(file);
+  if (file) loadPicture(file);
   e.target.value = '';
 });
 
@@ -1126,7 +1161,7 @@ canvas.addEventListener('dragover', e => e.preventDefault());
 canvas.addEventListener('drop', e => {
   e.preventDefault();
   const file = e.dataTransfer.files[0];
-  if (file && (file.type === 'image/svg+xml' || file.name.endsWith('.svg'))) loadSVG(file);
+  if (file && (/^image\//.test(file.type) || /\.(svg|png|jpe?g|webp|gif)$/i.test(file.name))) loadPicture(file);
 });
 canvas.addEventListener('wheel', wheel, { passive: false });
 canvas.addEventListener('pointerdown', down);
