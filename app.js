@@ -8,6 +8,7 @@ import {
   dxOf, dyOf, angleTo, distOf,
 } from './field.js';
 import { buildRail, buildSettings, buildBar, buildQuick } from './ui.js';
+import { analyze, binarize, toPNG } from './picture.js';
 
 const INK = '#f1ede5';
 const PAPER = '#161616';
@@ -286,6 +287,20 @@ let svgOverlay = null;
 let importVersion = 0;
 const overlayWidth = o => o.h * o.ia / AR;
 
+/* Предпросмотр считается на уменьшенной копии: на фотографии 4000×3000
+   полноразмерный пересчёт на каждое движение ползунка не укладывается в кадр.
+   Запекается картинка уже в PREVIEW_BAKE. */
+const PREVIEW_SIDE = 700;
+const PREVIEW_BAKE = 1600;
+
+function refreshPreview() {
+  const o = svgOverlay;
+  if (!o) return;
+  o.shown = o.mode === 'luma'
+    ? binarize(o.img, { threshold: o.threshold, blur: o.blur, invert: o.invert, maxSide: PREVIEW_SIDE })
+    : o.img;
+}
+
 /* Картинка-заготовка: SVG остаётся резким при любом масштабе, растр — нет,
    но механика одна: показ через drawImage, столкновения с теневого растра. */
 function loadPicture(file) {
@@ -293,7 +308,7 @@ function loadPicture(file) {
   const isSVG = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
   showMessage();
   const fail = () => {
-    if (version === importVersion) showMessage('Не удалось открыть файл. Подойдут SVG и PNG.');
+    if (version === importVersion) showMessage('Не удалось открыть файл. Подойдут SVG, PNG, JPEG, WEBP и GIF.');
   };
   const reader = new FileReader();
   reader.onerror = fail;
@@ -316,11 +331,14 @@ function loadPicture(file) {
       const ia = (img.naturalWidth || 300) / (img.naturalHeight || 300);
       let h = 0.6, w = h * ia / AR;
       if (w > 0.6) { w = 0.6; h = w * AR / ia; }
+      const { mode, threshold, invert } = analyze(img);
       svgOverlay = {
         img, src, ia, h, baseH: h,
         x: (1 - w) / 2, y: (1 - h) / 2,
         dragging: false, grabDx: 0, grabDy: 0,
+        mode, threshold, blur: 0, invert, shown: img,
       };
+      refreshPreview();
       hasInteracted = true;
       syncSVGScale();
       updateControls();
@@ -630,7 +648,7 @@ function drawSVGOverlay() {
   ctx.save();
   ctx.globalAlpha = 0.7;
   ctx.filter = 'brightness(0) invert(1)';
-  ctx.drawImage(o.img, px, py, pw, ph);
+  ctx.drawImage(o.shown, px, py, pw, ph);
   ctx.restore();
   ctx.strokeStyle = MUTED;
   ctx.lineWidth = Math.max(1, Math.min(Sx, Sy) * 0.002);
