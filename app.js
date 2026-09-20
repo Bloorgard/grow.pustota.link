@@ -1343,6 +1343,18 @@ canvas.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file && (/^image\//.test(file.type) || /\.(svg|png|jpe?g|webp|gif)$/i.test(file.name))) loadPicture(file);
 });
+/* Вставка из буфера: тот же путь, что у выбранного файла. Буфер без
+   картинки молча игнорируется — вставка текста в рисовалку не ошибка
+   пользователя, а промах мимо цели, сообщать о нём не о чем. */
+document.addEventListener('paste', event => {
+  const item = [...(event.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (!item) return;
+  const file = item.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  loadPicture(file);
+});
+
 canvas.addEventListener('wheel', wheel, { passive: false });
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
